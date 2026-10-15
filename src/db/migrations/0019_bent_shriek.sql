@@ -1,0 +1,1 @@
+ALTER TABLE "user_profiles" ADD COLUMN "banner_enabled" boolean DEFAULT true NOT NULL;

@@ -1,0 +1,110 @@
+@theme {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-secondary: var(--secondary);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-soft: var(--primary-soft);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  --shadow-elevation-card: var(--shadow-elevation-card);
+  --shadow-elevation-input: var(--shadow-elevation-input);
+
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1280px;
+}
+
+:root {
+  /* Dark mode default. Light overrides live in `:root.light` below; the
+     ThemeProvider toggles the class on <html> to switch. */
+  --background: #09090b;
+  --card: #18181b;
+  --secondary: #27272a;
+  --border: #27272a;
+
+  /* Deep Indigo Palette — works on both backgrounds, so no light variant. */
+  --primary: #3B4FFF;
+  --primary-foreground: #ffffff;
+  --primary-hover: #2F3FE6;
+  --primary-active: #2633C7;
+  --primary-soft: rgba(59, 79, 255, 0.12);
+
+  --foreground: #fafafa;
+  --muted-foreground: #a1a1aa;
+  --destructive: #7f1d1d;
+  --input: #27272a; /* Same as secondary/border based on typical dark mode patterns */
+  --ring: rgba(59, 79, 255, 0.45);
+
+  /* Shadows - subtle, cinematic */
+  --shadow-elevation-card: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --shadow-elevation-input: 0 2px 10px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* Light mode. Activated by ThemeProvider adding `light` class on <html>.
+   Keeps the primary palette unchanged — same accent reads on both. */
+:root.light {
+  --background: #fafafa;
+  --card: #ffffff;
+  --secondary: #f4f4f5;
+  --border: #e4e4e7;
+
+  --primary-soft: rgba(59, 79, 255, 0.08);
+
+  --foreground: #09090b;
+  --muted-foreground: #52525b;
+  --destructive: #dc2626;
+  --input: #f4f4f5;
+  --ring: rgba(59, 79, 255, 0.35);
+
+  /* Shadows: lighter and softer so they read on a near-white background. */
+  --shadow-elevation-card: 0 4px 16px -4px rgba(15, 15, 20, 0.08);
+  --shadow-elevation-input: 0 1px 4px -1px rgba(15, 15, 20, 0.06);
+}
+
+@layer utilities {
+  .text-h1 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  
+  .text-h2 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  
+  .text-h3 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  
+  .text-body-lg {
+    font-size: 16px;
+    font-weight: 400;
+  }
+  
+  .text-body-regular {
+    font-size: 14px;
+    font-weight: 400;
+  }
+  
+  .text-meta {
+    font-size: 13px;
+    font-weight: 500;
+  }
+}

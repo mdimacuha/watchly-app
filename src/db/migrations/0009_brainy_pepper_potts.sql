@@ -1,0 +1,2 @@
+CREATE TYPE "public"."watchlist_item_status" AS ENUM('just_added', 'up_next', 'watching', 'finished');--> statement-breakpoint
+ALTER TABLE "watchlist_items" ADD COLUMN "status" "watchlist_item_status" DEFAULT 'just_added' NOT NULL;

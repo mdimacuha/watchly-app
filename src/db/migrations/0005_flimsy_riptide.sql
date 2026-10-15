@@ -1,0 +1,2 @@
+CREATE TYPE "public"."favorite_type" AS ENUM('movie', 'tv', 'collection', 'artist');--> statement-breakpoint
+ALTER TABLE "user_favorites" ALTER COLUMN "favorite_type" SET DATA TYPE "public"."favorite_type" USING "favorite_type"::"public"."favorite_type";

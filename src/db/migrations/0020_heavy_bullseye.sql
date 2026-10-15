@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "hide_watched" boolean DEFAULT true NOT NULL;

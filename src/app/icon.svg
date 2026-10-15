@@ -1,0 +1,20 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Watchly">
+  <defs>
+    <linearGradient id="wl-tile" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1E40AF"/>
+    </linearGradient>
+    <linearGradient id="wl-gloss" x1="32" y1="2" x2="32" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="15" fill="url(#wl-tile)"/>
+  <rect x="0" y="0" width="64" height="64" rx="15" fill="url(#wl-gloss)"/>
+  <path d="M26 21.5 L45 32 L26 42.5 Z"
+        fill="#F8FAFC"
+        stroke="#F8FAFC"
+        stroke-width="6"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+</svg>

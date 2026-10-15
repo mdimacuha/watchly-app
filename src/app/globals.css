@@ -1,0 +1,95 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Custom `light:` variant — applies utilities scoped to <html class="light">.
+   Pairs with the :root.light token swap in tokens.css for cases where literal
+   colors (not theme tokens) need a per-mode override (e.g. status pills). */
+@custom-variant light (&:where(.light, .light *));
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--primary);
+  color: #ffffff;
+}
+
+/* Utilities */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Slim, themed scrollbar — used on horizontally scrolling areas (kanban
+     board) where the scrollable affordance should still be visible but the
+     browser default is too chunky. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.24);
+  }
+
+  /* Reveal-on-hover scrollbar used by For You rows. Fully hidden by default
+     (no track, no thumb, no reserved gutter) and pops in when the user
+     hovers the row. Switching `display: none` → `block` on hover does
+     cause a tiny 8px layout shift, but that's only visible during the
+     interaction so it reads as expected behavior.
+
+     Firefox uses `scrollbar-width: none` always — Firefox can't toggle
+     scrollbar width responsively, and an always-hidden scrollbar is fine
+     UX-wise (users still scroll via touchpad / wheel / keyboard). */
+  .scrollbar-hover {
+    scrollbar-width: none;
+  }
+  .scrollbar-hover::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hover:hover::-webkit-scrollbar {
+    display: block;
+    height: 8px;
+    width: 8px;
+  }
+  .scrollbar-hover:hover::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-hover:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.18);
+    border-radius: 9999px;
+  }
+  .scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .mask-linear-fade {
+    mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  }
+}

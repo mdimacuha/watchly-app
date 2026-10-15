@@ -1,0 +1,147 @@
+---
+alwaysApply: true
+---
+
+# .cursorrules.md — Watchly v2
+
+You are an expert full-stack engineer pair-programming on **Watchly v2**.
+
+## Project goals
+- Build a clean, production-ready Next.js 16 (App Router) full-stack app.
+- Use Postgres + Drizzle ORM with **generated migrations as the permanent record**.
+- Keep APIs consistent, typed, validated, and observable.
+
+## Stack and constraints
+- Next.js 16.1.1 App Router (Route Handlers under `src/app/api/**`).
+- TypeScript.
+- Postgres (`pg`) + Drizzle ORM (`drizzle-orm`, `drizzle-kit`).
+- Validation via Zod.
+- Styling: Tailwind v4.
+- Do not introduce new libraries unless clearly needed and justified.
+
+## Repo conventions
+- Use `src/` for all app code.
+- Keep DB-related files in `src/db/**`.
+- Keep shared utilities in `src/lib/**`.
+- Keep integrations (TMDB, providers) in `src/integrations/**`.
+
+### Suggested structure
+- `src/app/api/**/route.ts` — API endpoints (Route Handlers)
+- `src/db/schema.ts` — Drizzle schema definitions (source of truth for generate)
+- `src/db/migrations/**` — generated migrations (DO NOT EDIT after applied)
+- `src/db/migrate.ts` — migrator runner
+- `src/lib/api.ts` — API response helpers + error mapping
+- `src/lib/logger.ts` — structured logger + request logging helper
+- `src/env.ts` — Zod-validated environment variables
+
+## Database and migrations (critical)
+- Treat `schema.ts` as the source of truth.
+- Generated migration files are the immutable record.
+- Workflow:
+  1. Update `src/db/schema.ts`
+  2. Run: `npm run db:migrate:generate`
+  3. Run: `npm run db:migrate`
+- Never edit or delete existing migration files after they have been applied to any environment.
+- No down migrations. Fix mistakes with new forward migrations.
+- Use timezone-aware timestamps: `timestamp(..., { withTimezone: true })`.
+- All foreign keys should be `notNull()` unless there is a clear reason.
+- Always set `onDelete` behavior on relations (`cascade` for dependent rows, otherwise `restrict`).
+
+## Environment configuration
+- Tooling expects `.env` to exist for `drizzle-kit studio`.
+- `.env.local` is allowed for Next.js app secrets, but migration tooling should be able to run without Next.js.
+- Add `src/env.ts` to validate env vars using Zod and fail fast.
+
+### Services layer
+- `src/services/**` contains business logic and domain rules.
+- Services may access the database and integrations.
+- Services must not depend on HTTP-specific concepts (Request, Response, cookies).
+- API routes should be thin and delegate logic to services.
+- Each service exposes a small public API via `index.ts`.
+
+## API route file rule (strict)
+- Files under `src/app/api/**/route.ts` must contain ONLY exports of service handlers.
+- Example:
+  - `export { GET, POST } from "@/services/something";`
+- All validation, parsing, pagination, error handling, logging, and DB logic must live in `src/services/**` and use `src/lib/api.ts`.
+
+## API design rules
+- Use consistent response shape everywhere:
+  - Success: `{ ok: true, data: ... }`
+  - Error: `{ ok: false, error: { code, message, details? } }`
+- Validate all inputs:
+  - Query params via Zod in route handlers
+  - JSON bodies via Zod
+- Never trust client inputs. Explicitly parse and validate.
+- Use proper HTTP codes:
+  - 200/201 success
+  - 400 invalid input
+  - 401 unauthenticated
+  - 403 unauthorized
+  - 404 not found
+  - 409 conflict
+  - 429 rate limit (when added)
+  - 500 unexpected
+
+## Error handling
+- Do not leak internal errors or stack traces to clients.
+- Log internal errors with context (route, params redacted).
+- Map errors to API error codes (stable strings), example:
+  - `VALIDATION_ERROR`
+  - `NOT_FOUND`
+  - `UNAUTHORIZED`
+  - `FORBIDDEN`
+  - `CONFLICT`
+  - `INTERNAL_ERROR`
+
+## Logging and observability
+- Use structured JSON logs only (no multi-line text dumps).
+- Add request timing for API routes.
+- Redact secrets in logs (password/token/secret/key/auth).
+- Prefer a small helper wrapper that:
+  - records start time
+  - calls handler
+  - logs status + duration
+  - logs errors with stack when available
+
+## Drizzle usage rules
+- Prefer explicit selects (avoid `select().from(table)` returning huge payloads).
+- Use stable, typed DTOs for API responses.
+- Add indexes when adding new tables with expected query patterns.
+- Keep joins readable and minimal.
+
+## Security rules
+- Never log raw secrets, tokens, passwords, verification codes.
+- Store password hashes only (never plaintext). Use `passwordDigest` or `passwordHash`.
+- Sessions:
+  - sessionToken must be unique
+  - store expiry time
+  - plan for httpOnly cookies later (even if not implemented now)
+
+## Code style
+- TypeScript strictness: prefer explicit types at boundaries.
+- Prefer `const` and pure functions.
+- No `any` unless absolutely unavoidable.
+- Keep functions small; extract helpers when route handlers get long.
+- Prefer `camelCase` in code, `snake_case` in DB column names.
+- Use consistent naming:
+  - Tables plural (`users`, `user_sessions`, `titles`, `title_providers`)
+  - Drizzle exports camelCase (`userSessions`, `titleProviders`)
+
+## Output expectations for Cursor
+When you generate code:
+- Provide complete files with correct paths.
+- Include any required imports.
+- Include commands to run (only when necessary).
+- Avoid placeholder code unless explicitly requested.
+- If you make a non-trivial change, explain why briefly in 1–3 sentences.
+
+## Current scripts (reference)
+- `npm run dev` — start Next dev server
+- `npm run db:migrate:generate` — generate migrations from schema
+- `npm run db:migrate` — apply migrations
+- `npm run db:studio` — open Drizzle Studio
+
+## Do and don’t summary
+- DO: validate inputs with Zod, use consistent API responses, log with redaction, keep migrations immutable.
+- DON’T: use `drizzle-kit push`, edit applied migrations, log secrets, or add new libs casually.

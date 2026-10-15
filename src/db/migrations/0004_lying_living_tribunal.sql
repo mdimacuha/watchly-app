@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "user_favorites_unique_idx" ON "user_favorites" USING btree ("user_id","favorite_id","favorite_type");
