@@ -5,7 +5,7 @@ import type { InsightTitle } from '@/services/profile/insights';
 
 /**
  * Pure derivations behind the profile member card, shared by the page
- * (ProfilePrototype) and the exported story image (server/profile/storyImage)
+ * (MemberProfile) and the exported story image (server/profile/storyImage)
  * so both always say the same thing.
  */
 

@@ -8,12 +8,10 @@ import {
   deleteReview,
   getUserReview,
   getReviewAggregate,
-  getUserReviews,
   getTitleReviews,
   type ReviewInput,
   type ReviewAggregate,
   type UserReview,
-  type EnrichedReview,
   type TitleReview,
 } from '@/services/reviews';
 
@@ -97,15 +95,6 @@ export async function saveReviewAction(
     }
     throw err;
   }
-}
-
-/**
- * The current viewer's own reviews, enriched with title/poster, for the
- * profile "Reviews" tab. Requires an authenticated user.
- */
-export async function getMyReviewsAction(): Promise<EnrichedReview[]> {
-  const userId = await requireUserId();
-  return getUserReviews(userId, { limit: 60 });
 }
 
 /** Deletes the viewer's review for a title and returns the refreshed aggregate. */

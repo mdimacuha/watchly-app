@@ -1,18 +1,16 @@
 'use client';
 
 /**
- * PROTOTYPE — throwaway. Do not ship as-is.
- *
- * Round 2: the owner's picks across A/B/C (earlier variants are in the
- * checkpoint):
- *   - the membership card (A) — billing line, stamps, Now showing, actions —
+ * The profile page (/me and /user/[username]):
+ *   - the member card — billing line, stamps, card highlight, actions —
  *     with a subtle 3D tilt + accent gradient, and instant accent swatches
- *   - Feature presentation (B): crowned #1 + 3 supports, ranked by the
- *     owner's own star ratings, then recency (manual pinning comes later)
- *   - Programmes (watchlists)
- *   - By the numbers (C's stat frames)
- * Name is the heading; 3 tabs; owner: Edit · Preview as visitor · Share;
- * visitors: Follow · Share · taste match.
+ *   - Feature presentation: crowned #1 + 3 supports, ranked by the owner's
+ *     own star ratings, then recency
+ *   - Programmes (watchlists, with Quick View)
+ *   - By the numbers (bento stat frames)
+ * Tabs: Profile · Library · Reviews. Owner: Edit · Accent · Preview as
+ * visitor · Share · Export story. Visitors: Follow · Share · Block menu ·
+ * taste match.
  */
 
 import { useEffect, useState, type PointerEvent, type ReactNode } from 'react';
@@ -29,6 +27,7 @@ import { VerifiedBadge } from '@/components/profile/VerifiedBadge';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { FollowButton } from '@/components/social/FollowButton';
+import { ProfileMoreMenu } from '@/components/social/ProfileMoreMenu';
 import { WatchlistCard } from '@/components/watchlists/WatchlistCard';
 import { FollowSuggestionsRow } from '@/components/social/FollowSuggestionsRow';
 import { AccentScope } from '@/components/profile/AccentScope';
@@ -49,7 +48,7 @@ interface Props {
 
 type Tab = 'profile' | 'library' | 'reviews';
 
-export function ProfilePrototype({ showcase, preview }: Props) {
+export function MemberProfile({ showcase, preview }: Props) {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>('profile');
   const { overview } = showcase;
@@ -410,6 +409,10 @@ function ActionBar({
           <Link2 className="h-4 w-4" /> Share
         </button>
         {owner && <StoryExportButton userId={p.userId} username={p.username} accent={accent} className={btn} />}
+        {/* Block / unblock — signed-in visitors only (not in owner preview). */}
+        {!owner && showcase.viewerSignedIn && !overview.isSelf && (
+          <ProfileMoreMenu targetUserId={p.userId} targetUsername={p.username} isBlocked={overview.followState.blocked} />
+        )}
       </div>
 
       {owner && swatchesOpen && (

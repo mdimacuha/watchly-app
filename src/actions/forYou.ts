@@ -8,7 +8,6 @@ import { getUserRegion } from '@/services/preferences';
 import {
   getForYouFeed,
   getForYouRow,
-  type ForYouCandidate,
   type ForYouFeed,
   type ForYouRowId,
   type ForYouRowPage,
@@ -69,24 +68,6 @@ export async function getForYouRowAction(input: {
   return getForYouRow(session.userId, region, rowId, { page });
 }
 
-/**
- * Returns a fresh hero candidate that isn't any of the ones the user has
- * already seen this session. `excludeKeys` is the cumulative list of
- * `"mediaType:tmdbId"` strings the client builds up across spins —
- * without this Spin Again ping-pongs between two titles when seeds are
- * sparse (only the immediately-previous hero gets excluded).
- */
-export async function spinHeroAction(
-  excludeKeys: string[],
-): Promise<ForYouCandidate | null> {
-  const session = await getSession();
-  if (!session) throw new UnauthorizedAppError();
-  const region = await resolveRegion(session.userId);
-  const feed = await getForYouFeed(session.userId, region, {
-    excludeKeys,
-  });
-  return feed.hero;
-}
 
 /**
  * Records a watch via the hybrid model and revalidates /for-you so the

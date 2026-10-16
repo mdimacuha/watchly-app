@@ -12,12 +12,8 @@ import {
   blockUser,
   unblockUser,
   getFollowState,
-  getFollowStatesBulk,
-  listFollowers,
-  listFollowing,
   type FollowStatus,
   type FollowState,
-  type PublicUserCard,
 } from '@/services/social';
 
 async function requireUserId(): Promise<string> {
@@ -90,65 +86,4 @@ export async function getFollowStateAction(
 ): Promise<FollowState> {
   const session = await getSession();
   return getFollowState(session?.userId ?? null, targetId);
-}
-
-export interface FollowListEntry {
-  user: PublicUserCard;
-  status: FollowStatus | null;
-  blocked: boolean;
-  isSelf: boolean;
-}
-
-/**
- * Lists followers/following for a given user, joined with the viewer's
- * follow state per row so each card can render a correct Follow button
- * without an extra round-trip per item. `targetUserId` defaults to the
- * caller — passing null/undefined means "my list".
- */
-async function loadFollowList(
-  source: 'followers' | 'following',
-  targetUserId: string | null,
-): Promise<FollowListEntry[]> {
-  const viewerId = await requireUserId();
-  const ownerId = targetUserId ?? viewerId;
-
-  const rows =
-    source === 'followers'
-      ? await listFollowers(ownerId)
-      : await listFollowing(ownerId);
-
-  const states = await getFollowStatesBulk(
-    viewerId,
-    rows.map((u) => u.id),
-  );
-
-  return rows.map((u) => {
-    const s = states.get(u.id);
-    return {
-      user: u,
-      status: s?.status ?? null,
-      blocked: s?.blocked ?? false,
-      isSelf: viewerId === u.id,
-    };
-  });
-}
-
-export async function listMyFollowersAction(): Promise<FollowListEntry[]> {
-  return loadFollowList('followers', null);
-}
-
-export async function listMyFollowingAction(): Promise<FollowListEntry[]> {
-  return loadFollowList('following', null);
-}
-
-export async function listUserFollowersAction(
-  userId: string,
-): Promise<FollowListEntry[]> {
-  return loadFollowList('followers', userId);
-}
-
-export async function listUserFollowingAction(
-  userId: string,
-): Promise<FollowListEntry[]> {
-  return loadFollowList('following', userId);
 }

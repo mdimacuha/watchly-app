@@ -1,10 +1,7 @@
 'use client';
 
 /**
- * PROTOTYPE — throwaway. Do not ship as-is.
- *
- * Round 2 (owner picked A + B, plus C's grouping). Earlier A/B/C variants
- * are saved in the checkpoint.
+ * For You.
  *
  *   /for-you         — The Programme (Feature · 2 Supports · Wildcard) with
  *                      the Dial (time + mood) on top: turning it refills the
@@ -35,6 +32,7 @@ import { formatRuntime } from '@/lib/format';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
 import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButton';
+import { PreferencesButton } from '@/components/forYou/PreferencesButton';
 import { useToastStore } from '@/client/stores/toast';
 import { useToast } from '@/hooks/useToast';
 import { trackForYou } from '@/client/forYouEvents';
@@ -237,12 +235,16 @@ function ContinueStrip({ items, variant }: { items: ContinueItem[]; variant: str
 
 function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <header className="flex flex-col gap-1">
-      <h1 className="text-h2">{title}</h1>
-      <p className="text-sm text-muted-foreground">
-        Picked from your favorites, watchlists and swipes.
-        {children}
-      </p>
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-h2">{title}</h1>
+        <p className="text-sm text-muted-foreground">
+          Picked from your favorites, watchlists and swipes.
+          {children}
+        </p>
+      </div>
+      {/* Your streaming services — picks lean toward what you can watch. */}
+      <PreferencesButton />
     </header>
   );
 }

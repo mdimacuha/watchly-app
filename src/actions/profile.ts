@@ -6,8 +6,6 @@ import { UnauthorizedAppError } from '@/utils/errors';
 import {
   updateProfile,
   getProfileWithStats,
-  getMyProfileOverview,
-  getPublicProfileOverview,
 } from '@/services/profile';
 import { invalidateAccentColorFor } from '@/services/profile/accentCache';
 import type { UpdateProfileInput } from '@/services/profile/validators';
@@ -29,20 +27,8 @@ export async function getMyProfileAction() {
   return getProfileWithStats(session.userId);
 }
 
-export async function getMyProfileOverviewAction() {
-  const session = await getSession();
-  if (!session) throw new UnauthorizedAppError();
-  return getMyProfileOverview(session.userId);
-}
-
-export async function getPublicProfileAction(username: string) {
-  const session = await getSession();
-  const viewerId = session?.userId ?? null;
-  return getPublicProfileOverview(username, viewerId);
-}
-
 /**
- * PROTOTYPE data for the profile redesign: the privacy-safe public overview
+ * Data for the profile page: the privacy-safe public overview
  * plus personality insights and (for visitors) a taste match. `asGuest`
  * loads the profile exactly as a signed-out visitor sees it — the owner's
  * "Preview as visitor" goes through the real privacy path, not a mock.
