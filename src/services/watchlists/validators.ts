@@ -62,6 +62,18 @@ export const watchlistItemNotesSchema = z
   .max(NOTES_MAX_LENGTH, `Notes must be ${NOTES_MAX_LENGTH} characters or less`)
   .nullable();
 
+export const reorderItemsSchema = z.object({
+  orderedIds: z.array(z.string().uuid()).max(1000),
+  /** Item the curator just dragged; marked ranked if it wasn't yet. */
+  rankedItemId: z.string().uuid().optional(),
+});
+
+export const setItemRankSchema = z.object({
+  itemId: z.string().uuid(),
+  /** 0 = unranked ("Recently Added"); 1..n = rank. Upper bound checked in service. */
+  rank: z.number().int().min(0),
+});
+
 export const updateItemNotesSchema = z.object({
   itemId: z.string().uuid(),
   notes: watchlistItemNotesSchema,

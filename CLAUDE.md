@@ -8,6 +8,10 @@ Before starting a task, read `rules/index.md` — it routes you to the smallest 
 
 Conflict resolution (from `rules/index.md`): follow simplicity, follow the existing codebase, do not over-engineer.
 
+## Changelog before every commit
+
+Every commit ships with public release notes: run the `changelog` skill (`.claude/skills/changelog/SKILL.md`) before handing over commit commands. Releases are `changelogs/YYYY-MM-DD.md`, rendered at `/changelogs`. The newest release's `## Promotional` section drives the sidebar announcement card.
+
 ## Commands
 
 - `npm run dev` — start Next.js dev server (port 3000)

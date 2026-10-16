@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { ArrowBigUp, Bookmark } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { cn } from '@/lib/cn';
 import { formatRelativeAgo } from '@/lib/format';
 import { useToast } from '@/hooks/useToast';
@@ -19,10 +20,14 @@ const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
 
 interface WatchlistCardProps {
   watchlist: WatchlistWithCount;
+  /** Open a Quick View of the list on click instead of navigating (profiles). */
+  quickLook?: boolean;
 }
 
-export function WatchlistCard({ watchlist }: WatchlistCardProps) {
+export function WatchlistCard({ watchlist, quickLook = false }: WatchlistCardProps) {
   const posters = watchlist.posterPaths.slice(0, 3);
+  // Same href either way, so modified clicks still open the full list.
+  const CardLink = quickLook ? QuickViewLink : Link;
 
   return (
     <div className="group relative block h-full">
@@ -34,7 +39,7 @@ export function WatchlistCard({ watchlist }: WatchlistCardProps) {
           <CardUpvoteButton watchlistId={watchlist.id} />
         </div>
       )}
-      <Link
+      <CardLink
         href={`/watchlists/${watchlist.id}`}
         className="block h-full"
       >
@@ -79,7 +84,7 @@ export function WatchlistCard({ watchlist }: WatchlistCardProps) {
             </span>
           </div>
         </Card>
-      </Link>
+      </CardLink>
     </div>
   );
 }

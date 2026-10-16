@@ -5,7 +5,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { userFavorites } from '@/db/schema';
 import { getSession } from '@/server/auth/session';
-import { UnauthorizedAppError } from '@/utils/errors';
+import { ZodError } from 'zod';
+import { AppError, UnauthorizedAppError } from '@/utils/errors';
 import { revalidatePath } from 'next/cache';
 import { getUserRegion } from '@/services/preferences';
 import {
@@ -22,11 +23,13 @@ import {
   getOrCreateDefaultWatchlist,
   bulkAddCollectionParts,
   reorderItems,
+  setItemRank,
   isInAnyWatchlist,
   type WatchlistMediaType,
   type WatchlistItemStatus,
 } from '@/services/watchlists';
 import { enrichWatchlistItems } from '@/services/watchlists/enrich';
+import { getWatchlistQuickLook, type WatchlistQuickLook } from '@/services/watchlists/quickLook';
 import {
   toggleWatchlistUpvote,
   getWatchlistVoteState,
@@ -133,6 +136,23 @@ export async function getEnrichedWatchlistAction(watchlistId: string) {
 
   const enriched = await enrichWatchlistItems(items, region, favoriteSet);
   return { watchlist, items: enriched, isOwner, owner };
+}
+
+/**
+ * Watchlist Quick View. "unavailable" covers private, missing, and malformed
+ * ids alike so a private list's existence isn't revealed; anything else
+ * throws and the popup shows its retry state.
+ */
+export async function getWatchlistQuickLookAction(
+  watchlistId: string,
+): Promise<{ status: 'ok'; data: WatchlistQuickLook } | { status: 'unavailable' }> {
+  const session = await getSession();
+  try {
+    return { status: 'ok', data: await getWatchlistQuickLook(watchlistId, session?.userId ?? null) };
+  } catch (err) {
+    if (err instanceof AppError || err instanceof ZodError) return { status: 'unavailable' };
+    throw err;
+  }
 }
 
 async function resolveViewerRegion(viewerId: string | null): Promise<string> {
@@ -351,9 +371,21 @@ export async function addCollectionToWatchlistSmartAction(collectionId: string) 
 export async function reorderWatchlistItemsAction(
   watchlistId: string,
   orderedIds: string[],
+  rankedItemId?: string,
 ) {
   const userId = await requireUserId();
-  await reorderItems(watchlistId, userId, orderedIds);
+  await reorderItems(watchlistId, userId, orderedIds, rankedItemId);
+  revalidatePath(`/watchlists/${watchlistId}`);
+}
+
+/** Set an item's curator rank: 0 = unranked, 1..n = position. */
+export async function setWatchlistItemRankAction(
+  watchlistId: string,
+  itemId: string,
+  rank: number,
+) {
+  const userId = await requireUserId();
+  await setItemRank(watchlistId, userId, itemId, rank);
   revalidatePath(`/watchlists/${watchlistId}`);
 }
 

@@ -21,6 +21,8 @@ export function mapMovie(result: any): MovieCard {
     releaseDate: result.release_date,
     voteAverage: result.vote_average,
     overview: result.overview,
+    genreIds: result.genre_ids,
+    voteCount: result.vote_count,
     mediaType: "movie",
   };
 }
@@ -34,6 +36,8 @@ export function mapTv(result: any): TvCard {
     firstAirDate: result.first_air_date,
     voteAverage: result.vote_average,
     overview: result.overview,
+    genreIds: result.genre_ids,
+    voteCount: result.vote_count,
     mediaType: "tv",
   };
 }
@@ -44,6 +48,16 @@ export function mapPerson(result: any): PersonCard {
     name: result.name,
     profilePath: result.profile_path,
     knownForDepartment: result.known_for_department,
+    knownFor: Array.isArray(result.known_for)
+      ? result.known_for
+          .filter((k: any) => k.media_type === "movie" || k.media_type === "tv")
+          .map((k: any) => ({
+            id: k.id,
+            mediaType: k.media_type,
+            title: k.title ?? k.name ?? "",
+          }))
+      : undefined,
+    popularity: result.popularity,
     mediaType: "person",
   };
 }

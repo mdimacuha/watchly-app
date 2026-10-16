@@ -112,3 +112,8 @@ export function getAccent(slug: AccentSlug | null | undefined): AccentDefinition
   if (!slug) return null;
   return ACCENTS[slug] ?? null;
 }
+
+/** Narrows stored text (DB values are unvalidated) to a known accent slug. */
+export function isAccentSlug(v: string | null | undefined): v is AccentSlug {
+  return !!v && (ACCENT_SLUGS as readonly string[]).includes(v);
+}

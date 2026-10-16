@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  // Release notes are read from disk (src/services/changelog) by the route-group
+  // layouts and /changelogs — make sure serverless bundles include them.
+  outputFileTracingIncludes: {
+    '/**/*': ['./changelogs/**/*.md'],
+    // Story export embeds the wordmark from disk (server/profile/storyImage).
+    '/api/me/profile/story': ['./public/brand-light.svg'],
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
   },

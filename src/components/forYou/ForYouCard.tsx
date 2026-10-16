@@ -1,10 +1,9 @@
-import Link from 'next/link';
 import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
 import { FavoriteButton } from '@/components/watchly/FavoriteButton';
-import { QuickViewButton } from '@/components/watchly/QuickViewButton';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButton';
 import type { ForYouCandidate, ForYouProvider } from '@/services/forYou';
 
@@ -23,7 +22,6 @@ const MAX_VISIBLE_BADGES = 3;
  */
 export function ForYouCard({ item, className }: ForYouCardProps) {
   const imageUrl = buildImageUrl(item.posterPath, 'w500');
-  const href = `/title/${item.mediaType}/${item.tmdbId}`;
 
   const visible = item.providers.slice(0, MAX_VISIBLE_BADGES);
   const overflow = Math.max(0, item.providers.length - MAX_VISIBLE_BADGES);
@@ -91,10 +89,11 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
           </div>
         )}
 
-        {/* Stretched link — covers the poster for navigation, sits under the
-            quick actions so the buttons win the click. */}
-        <Link
-          href={href}
+        {/* Stretched link — covers the poster and opens Quick View; sits under
+            the quick actions so the buttons win the click. */}
+        <QuickViewLink
+          mediaType={item.mediaType}
+          titleId={item.tmdbId}
           aria-label={item.title}
           className="absolute inset-0 z-10"
         />
@@ -103,7 +102,6 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
             Interactive only when revealed so hidden buttons don't eat clicks. */}
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100">
           <div className="flex items-center gap-2 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
-            <QuickViewButton mediaType={item.mediaType} id={idStr} />
             <FavoriteButton id={item.tmdbId} type={item.mediaType} showText={false} />
             <AddToWatchlistButton
               mediaType={item.mediaType}
@@ -115,13 +113,17 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
         </div>
       </div>
 
-      {/* Text row — its own link so the title/year area still navigates. */}
-      <Link href={href} className="flex flex-col p-3 space-y-1">
+      {/* Text row — its own link so clicking the title/year also opens Quick View. */}
+      <QuickViewLink
+        mediaType={item.mediaType}
+        titleId={item.tmdbId}
+        className="flex flex-col p-3 space-y-1"
+      >
         <h3 className="text-sm font-semibold leading-tight line-clamp-1 text-foreground">
           {item.title}
         </h3>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{item.year || 'Unknown'}</span>
+          {item.year && <span>{item.year}</span>}
         </div>
         {/* For You–specific subtitle slot — preserved alongside the search-
             matched header so contextual info like "Added 2d ago" still has
@@ -131,7 +133,7 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
             {item.subtitle}
           </span>
         )}
-      </Link>
+      </QuickViewLink>
     </div>
   );
 }

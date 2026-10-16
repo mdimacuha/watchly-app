@@ -6,7 +6,8 @@ import { SearchField } from './SearchField';
 import { FilterPills } from './FilterPills';
 import { FilterDropdowns } from './FilterDropdowns';
 import { ActiveFilterChips } from './ActiveFilterChips';
-import { SearchResultsGrid } from './SearchResultsGrid';
+import { SearchResults } from './SearchResults';
+import { trackSearch } from '@/client/searchEvents';
 import type { SearchResponse } from '@/types/tmdb';
 import { useRegionStore } from '@/client/stores/region';
 import { RegionToggle } from '@/components/region/RegionToggle';
@@ -38,6 +39,7 @@ export function SearchPageClient() {
     const fetchResults = async () => {
       setIsFetching(true);
       setError(null);
+      const startedAt = performance.now();
       try {
         const query = new URLSearchParams(searchParams);
 
@@ -53,6 +55,29 @@ export function SearchPageClient() {
         const json: SearchResponse = await res.json();
         setData(json);
         setIsFetching(false);
+
+        // Settled text searches only (the URL updates after the debounce, so
+        // this is one event per settled query/page, not per keystroke).
+        const q = searchParams.get('q')?.trim();
+        if (q) {
+          trackSearch('search_performed', q, {
+            page: json.page,
+            type: searchParams.get('type') ?? 'all',
+            filters: {
+              genre: searchParams.get('genre'),
+              year: searchParams.get('year'),
+              service: searchParams.get('service'),
+            },
+            titles: json.results.length,
+            totalResults: json.total_results,
+            people: json.people?.length ?? 0,
+            relatedKeyword: json.related?.keyword.name ?? null,
+            relatedCount: json.related?.items.length ?? 0,
+            zeroResults:
+              json.results.length === 0 && !json.people?.length && !json.related,
+            latencyMs: Math.round(performance.now() - startedAt),
+          });
+        }
       } catch {
         // A stale/aborted request was superseded — leave state to the newer one.
         if (controller.signal.aborted) return;
@@ -75,12 +100,15 @@ export function SearchPageClient() {
       {/* Header Section */}
       <div className="flex flex-col space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold tracking-tight">Search</h1>
+          <h1 className="text-h1">Search</h1>
           <RegionToggle />
         </div>
 
         {/* Search Bar */}
-        <SearchField fetching={isFetching} />
+        <SearchField
+          fetching={isFetching}
+          suggestionsData={data}
+        />
 
         {/* Filters */}
         <div className="w-full">
@@ -95,7 +123,7 @@ export function SearchPageClient() {
       </div>
 
       {/* Results Grid */}
-      <SearchResultsGrid
+      <SearchResults
         data={data}
         isFetching={isFetching}
         error={error}

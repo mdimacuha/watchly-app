@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { Star } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -11,11 +11,11 @@ import type { EnrichedReview } from '@/services/reviews';
  */
 export function ReviewCard({ review }: { review: EnrichedReview }) {
   const poster = buildImageUrl(review.posterPath, 'w342');
-  const href = `/title/${review.titleType}/${review.titleId}`;
 
   return (
-    <Link
-      href={href}
+    <QuickViewLink
+      mediaType={review.titleType}
+      titleId={review.titleId}
       className="group flex gap-3 rounded-lg border border-border/40 bg-card p-3 hover:bg-muted/30 transition-colors"
     >
       <div className="relative w-16 shrink-0 aspect-2/3 rounded-md overflow-hidden bg-muted">
@@ -62,6 +62,6 @@ export function ReviewCard({ review }: { review: EnrichedReview }) {
           </p>
         )}
       </div>
-    </Link>
+    </QuickViewLink>
   );
 }

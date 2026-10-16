@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { Heart } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -55,12 +55,12 @@ export function FavoriteCard({ favorite, onRemove }: FavoriteCardProps) {
   const imageUrl = buildImageUrl(imagePath, 'w342');
   const name = getName(favorite);
   const subtitle = getSubtitle(favorite);
-  const href = `${TYPE_LINKS[favorite.type]}/${favorite.data.id}`;
 
   return (
     <div className="group relative flex flex-col">
-      <Link
-        href={href}
+      <QuickViewLink
+        // Movies/TV open Quick View; artists/collections navigate.
+        href={`${TYPE_LINKS[favorite.type]}/${favorite.data.id}`}
         className="relative aspect-2/3 w-full overflow-hidden rounded-lg bg-card shadow-elevation-card transition-transform duration-300 hover:scale-105"
       >
         {imageUrl ? (
@@ -83,7 +83,7 @@ export function FavoriteCard({ favorite, onRemove }: FavoriteCardProps) {
         <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] uppercase font-bold text-white tracking-wider">
           {TYPE_LABELS[favorite.type]}
         </div>
-      </Link>
+      </QuickViewLink>
 
       {/* Remove button (only when onRemove is provided) */}
       {onRemove && (

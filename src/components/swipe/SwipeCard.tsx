@@ -1,110 +1,226 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import Image from 'next/image';
 import {
   animate,
   motion,
   useMotionValue,
+  useReducedMotion,
   useTransform,
   type PanInfo,
 } from 'framer-motion';
-import { Heart, X, Bookmark, Sparkles } from 'lucide-react';
+import { Heart, Sparkles, ThumbsUp, X } from 'lucide-react';
 import { buildImageUrl } from '@/lib/tmdb';
 import { cn } from '@/lib/cn';
 import type { SwipeDeckItem } from '@/services/swipe';
 
-interface SwipeCardProps {
-  item: SwipeDeckItem;
-  /** Drag distance past which a release commits as a swipe. */
-  threshold?: number;
-  /** Called on commit-left. */
-  onSwipeLeft: () => void;
-  /** Called on commit-right. */
-  onSwipeRight: () => void;
-  /** Top-of-stack card has interactive drag. Others render frozen. */
-  active?: boolean;
+export type SwipeDirection = 'left' | 'right' | 'up';
+
+/** Imperative handle so buttons / keys play the same exit as a drag. */
+export interface SwipeCardHandle {
+  swipe: (direction: SwipeDirection) => void;
 }
 
-const DEFAULT_THRESHOLD = 110;
+interface SwipeCardProps {
+  item: SwipeDeckItem;
+  /**
+   * Called once the exit animation finishes. `viaDrag` = gesture commit.
+   * Return false if the deck refused it — the card then resets to center
+   * instead of staying stranded off-screen.
+   */
+  onSwipe: (direction: SwipeDirection, viaDrag: boolean) => boolean;
+  /** Top-of-stack card has interactive drag. Others render frozen. */
+  active?: boolean;
+  /** Animate in from this side on mount (Undo returning the card). */
+  enterFrom?: SwipeDirection;
+  /** Checked on drag release: false springs the card back instead of
+   *  flying it off (the deck is mid-commit). Drag itself stays enabled so
+   *  the card never feels frozen. */
+  canCommit?: () => boolean;
+  ref?: Ref<SwipeCardHandle>;
+}
+
+// Commit threshold scales with card width (a fixed 110px felt stiff on a
+// 512px desktop card and was a third of a phone card).
+const THRESHOLD_RATIO = 0.25;
+const THRESHOLD_MIN = 80;
+const THRESHOLD_MAX = 140;
+const FLICK_VELOCITY = 800;
+// How long a button/key swipe holds the stamp "armed" before flying off,
+// so the user sees which verdict they just gave.
+const ARM_MS = 0.14;
 
 /**
  * Single deck card. The active card is dragged via framer-motion;
  * inactive cards underneath render at a slight scale/offset to suggest
  * a stack.
  *
- * Visual feedback during drag:
- *   - The card tracks the pointer 1:1 (no drag constraints / elastic), so
- *     the commit metric (`info.offset.x`) matches what the user sees.
- *   - Card rotates slightly toward the drag direction.
- *   - Pass / Like badge overlays fade to FULL exactly at `threshold` — the
- *     same distance that commits — so the badge reads as "armed" on release.
- *   - Sub-threshold release springs the card smoothly back to center.
- *   - On commit, the card flies off-screen in the drag direction, then
- *     invokes the swipe callback so the parent advances the stack.
+ * Feedback:
+ *   - The card tracks the pointer 1:1, rotating toward the drag direction.
+ *   - Pass / Like stamps fade to FULL exactly at the commit threshold.
+ *   - Every commit — drag, button or key — plays the same exit: the stamp
+ *     arms, then the card flies off (left = pass, right = like, up =
+ *     favorite). Reduced motion swaps this for a quick fade.
  */
 export function SwipeCard({
   item,
-  threshold = DEFAULT_THRESHOLD,
-  onSwipeLeft,
-  onSwipeRight,
+  onSwipe,
   active = true,
+  enterFrom,
+  canCommit,
+  ref,
 }: SwipeCardProps) {
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 0, 200], [-12, 0, 12]);
-  const passOpacity = useTransform(x, [-threshold, -threshold * 0.4, 0], [1, 0.6, 0]);
-  const likeOpacity = useTransform(x, [0, threshold * 0.4, threshold], [0, 0.6, 1]);
+  const reduceMotion = useReducedMotion();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const thresholdRef = useRef(110);
 
-  // Once a swipe commits we play a fly-off animation and only THEN tell the
-  // parent (which advances/records). `committing` both guards against a
-  // second commit and disables drag so the airborne card can't be re-grabbed
-  // mid-flight. The ref is the synchronous source of truth; the state exists
-  // to disable the drag gesture on re-render.
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const opacity = useMotionValue(1);
+  const rotate = useTransform(x, [-200, 0, 200], reduceMotion ? [0, 0, 0] : [-12, 0, 12]);
+  // Function transforms read the live threshold (card width can change).
+  const passOpacity = useTransform(x, (v) => clamp01(-v / thresholdRef.current));
+  const likeOpacity = useTransform(x, (v) => clamp01(v / thresholdRef.current));
+  const favoriteOpacity = useTransform(y, (v) => clamp01(-v / thresholdRef.current));
+
+  // Guards a second commit and disables drag mid-flight. The ref is the
+  // synchronous source of truth; the state re-renders drag off.
   const committingRef = useRef(false);
   const [committing, setCommitting] = useState(false);
 
-  const posterUrl = buildImageUrl(item.posterPath, 'w500');
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const measure = () => {
+      thresholdRef.current = Math.min(
+        THRESHOLD_MAX,
+        Math.max(THRESHOLD_MIN, el.offsetWidth * THRESHOLD_RATIO),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-  const flyOff = (direction: 1 | -1) => {
+  // The peeking card underneath sits dimmed; it brightens when it becomes
+  // the top card. (Opacity is a motion value so the reduced-motion exit
+  // fade can drive it too.)
+  useEffect(() => {
+    if (committingRef.current) return;
+    animate(opacity, active ? 1 : 0.7, { duration: 0.2 });
+  }, [active, opacity]);
+
+  // Undo: slide the restored card back in from the side it left.
+  useEffect(() => {
+    if (!enterFrom || !active) return;
+    if (reduceMotion) {
+      opacity.set(0);
+      animate(opacity, 1, { duration: 0.15 });
+      return;
+    }
+    const [fromX, fromY] = offscreen(enterFrom);
+    x.set(fromX);
+    y.set(fromY);
+    animate(x, 0, { type: 'spring', stiffness: 280, damping: 28 });
+    animate(y, 0, { type: 'spring', stiffness: 280, damping: 28 });
+    // Mount-only: enterFrom is fixed for this card instance (keyed).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const flyOff = async (direction: SwipeDirection, viaDrag: boolean) => {
     if (committingRef.current) return;
     committingRef.current = true;
     setCommitting(true);
-    const viewport = typeof window !== 'undefined' ? window.innerWidth : 600;
-    animate(x, direction * (viewport + 200), {
+
+    if (reduceMotion) {
+      await animate(opacity, 0, { duration: 0.15 });
+      if (!onSwipe(direction, viaDrag)) reset();
+      return;
+    }
+
+    const t = thresholdRef.current;
+    const axis = direction === 'up' ? y : x;
+    const sign = direction === 'left' || direction === 'up' ? -1 : 1;
+    // Button/key commits start at rest: arm the stamp first so the verdict
+    // is visible, then exit. Drag commits are already past the threshold.
+    if (!viaDrag) {
+      await animate(axis, sign * t, { duration: ARM_MS, ease: 'easeOut' });
+    }
+    const [toX, toY] = offscreen(direction);
+    await animate(axis, direction === 'up' ? toY : toX, {
       type: 'tween',
       duration: 0.3,
-      ease: 'easeOut',
-      onComplete: () => {
-        if (direction === 1) onSwipeRight();
-        else onSwipeLeft();
-      },
+      ease: 'easeIn',
     });
+    if (!onSwipe(direction, viaDrag)) reset();
   };
+
+  // Safety net: if the deck refused the commit, bring the card back and
+  // re-enable drag rather than leave it stuck off-screen.
+  const reset = () => {
+    x.set(0);
+    y.set(0);
+    opacity.set(0);
+    animate(opacity, 1, { duration: 0.15 });
+    committingRef.current = false;
+    setCommitting(false);
+  };
+
+  useImperativeHandle(ref, () => ({ swipe: (d) => void flyOff(d, false) }));
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     if (!active || committingRef.current) return;
-    if (info.offset.x > threshold || info.velocity.x > 800) {
-      flyOff(1);
-    } else if (info.offset.x < -threshold || info.velocity.x < -800) {
-      flyOff(-1);
+    const springBack = () => animate(x, 0, { type: 'spring', stiffness: 280, damping: 26 });
+    // Deck mid-commit (cooldown): don't fly off into a refusal.
+    if (canCommit && !canCommit()) {
+      springBack();
+      return;
+    }
+    const t = thresholdRef.current;
+    const { x: dx } = info.offset;
+    const { x: vx } = info.velocity;
+    // A flick commits only in the direction the card actually moved — a
+    // fast release while dragging back toward center shouldn't fire.
+    if (dx > t || (vx > FLICK_VELOCITY && dx > 0)) {
+      void flyOff('right', true);
+    } else if (dx < -t || (vx < -FLICK_VELOCITY && dx < 0)) {
+      void flyOff('left', true);
     } else {
-      // Sub-threshold release: spring smoothly back to center.
       animate(x, 0, { type: 'spring', stiffness: 280, damping: 26 });
     }
   };
 
+  const posterUrl = buildImageUrl(item.posterPath, 'w500');
+
   return (
     <motion.div
+      ref={cardRef}
+      // The peeking card underneath is decorative — keep it out of the
+      // accessibility tree so its title isn't announced too.
+      aria-hidden={!active}
       className={cn(
-        'absolute inset-0 select-none',
+        // touch-pan-y: horizontal drags go to the card, vertical swipes
+        // still scroll the page on touch.
+        'absolute inset-0 select-none touch-pan-y',
         active ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none',
       )}
       drag={active && !committing ? 'x' : false}
       dragMomentum={false}
       onDragEnd={handleDragEnd}
-      style={{ x, rotate }}
+      // Mouse drag fix: stop the browser's native image drag (ghost image)
+      // from hijacking the pointer before framer's drag starts.
+      onDragStartCapture={(e) => e.preventDefault()}
+      style={{ x, y, rotate, opacity }}
       initial={false}
-      animate={{ scale: active ? 1 : 0.95, opacity: active ? 1 : 0.7 }}
+      animate={{ scale: active ? 1 : 0.95 }}
       transition={{ type: 'spring', stiffness: 280, damping: 26 }}
     >
       <div className="relative w-full h-full rounded-xl overflow-hidden bg-card shadow-elevation-card">
@@ -113,7 +229,8 @@ export function SwipeCard({
             src={posterUrl}
             alt={item.title}
             fill
-            className="object-cover"
+            draggable={false}
+            className="object-cover pointer-events-none"
             sizes="(max-width: 640px) 100vw, 500px"
             priority={active}
           />
@@ -123,28 +240,10 @@ export function SwipeCard({
           </div>
         )}
 
-        {/* Pass / Like overlays — fade in as you drag past the commit
-            threshold so the user gets visual feedback before release. */}
-        <motion.div
-          style={{ opacity: passOpacity }}
-          className="absolute top-6 left-6 px-3 py-1.5 rounded-md border-2 border-destructive bg-background/80 backdrop-blur text-destructive text-xs font-bold uppercase tracking-widest flex items-center gap-1 -rotate-12"
-        >
-          <X className="w-3.5 h-3.5" strokeWidth={3} />
-          Pass
-        </motion.div>
-        <motion.div
-          style={{ opacity: likeOpacity }}
-          className="absolute top-6 right-6 px-3 py-1.5 rounded-md border-2 border-primary bg-background/80 backdrop-blur text-primary text-xs font-bold uppercase tracking-widest flex items-center gap-1 rotate-12"
-        >
-          <Heart className="w-3.5 h-3.5" strokeWidth={3} />
-          Like
-        </motion.div>
-
         {/* Top-left chip cluster: type badge + optional Wildcard tag
             when the card was injected from the exploration pool. */}
         <div className="absolute top-3 left-3 flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] uppercase font-bold text-white tracking-wider">
-            <Bookmark className="w-3 h-3" />
+          <span className="inline-flex items-center px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded text-[10px] uppercase font-bold text-white tracking-wider">
             {item.mediaType === 'movie' ? 'Movie' : 'TV'}
           </span>
           {item.isWildcard && (
@@ -154,6 +253,30 @@ export function SwipeCard({
             </span>
           )}
         </div>
+
+        {/* Verdict stamps — below the chip cluster so they don't overlap.
+            Armed by drag distance, or briefly by a button/key commit. */}
+        <motion.div
+          style={{ opacity: passOpacity }}
+          className="absolute top-14 left-6 px-3 py-1.5 rounded-md border-2 border-destructive bg-background/80 backdrop-blur text-destructive text-xs font-bold uppercase tracking-widest flex items-center gap-1 -rotate-12"
+        >
+          <X className="w-3.5 h-3.5" strokeWidth={3} />
+          Pass
+        </motion.div>
+        <motion.div
+          style={{ opacity: likeOpacity }}
+          className="absolute top-14 right-6 px-3 py-1.5 rounded-md border-2 border-primary bg-background/80 backdrop-blur text-primary text-xs font-bold uppercase tracking-widest flex items-center gap-1 rotate-12"
+        >
+          <ThumbsUp className="w-3.5 h-3.5" strokeWidth={3} />
+          Like
+        </motion.div>
+        <motion.div
+          style={{ opacity: favoriteOpacity }}
+          className="absolute top-1/3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-md border-2 border-primary bg-primary text-primary-foreground text-xs font-bold uppercase tracking-widest flex items-center gap-1"
+        >
+          <Heart className="w-3.5 h-3.5 fill-current" strokeWidth={3} />
+          Favorite
+        </motion.div>
 
         {/* Bottom gradient + meta — always rendered on the active card
             so the user can read title/year/reason without dragging. */}
@@ -180,7 +303,7 @@ export function SwipeCard({
             )}
           </div>
           {item.reason && (
-            <p className="text-[11px] uppercase tracking-wider text-primary/90 mt-3 font-semibold">
+            <p className="text-xs uppercase tracking-wider text-primary mt-3 font-semibold">
               {item.reason}
             </p>
           )}
@@ -193,4 +316,16 @@ export function SwipeCard({
       </div>
     </motion.div>
   );
+}
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
+}
+
+/** Off-screen [x, y] for an exit/entry direction. */
+function offscreen(direction: SwipeDirection): [number, number] {
+  const w = typeof window !== 'undefined' ? window.innerWidth : 600;
+  const h = typeof window !== 'undefined' ? window.innerHeight : 900;
+  if (direction === 'up') return [0, -(h + 200)];
+  return [direction === 'right' ? w + 200 : -(w + 200), 0];
 }

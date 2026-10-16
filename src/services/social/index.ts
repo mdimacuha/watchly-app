@@ -738,3 +738,54 @@ function toPublicUserCard(row: RawUserCardRow): PublicUserCard {
     avatarUrl: row.profileAvatarUrl || row.usersAvatarUrl || '',
   };
 }
+
+export interface FollowListExtras {
+  accentColor: string | null;
+  bio: string;
+  /** True when this person follows the viewer (accepted). */
+  followsViewer: boolean;
+}
+
+/**
+ * Extra per-person details for the followers / following pages: their
+ * accent (cards wear it), bio, and whether they follow the viewer — two
+ * batched queries regardless of list length.
+ */
+export async function getFollowListExtras(
+  viewerId: string | null,
+  ids: string[],
+): Promise<Map<string, FollowListExtras>> {
+  const map = new Map<string, FollowListExtras>();
+  if (ids.length === 0) return map;
+
+  const [profiles, followsViewer] = await Promise.all([
+    db
+      .select({ userId: userProfiles.userId, accentColor: userProfiles.accentColor, bio: userProfiles.bio })
+      .from(userProfiles)
+      .where(inArray(userProfiles.userId, ids)),
+    viewerId
+      ? db
+          .select({ followerId: userFollows.followerId })
+          .from(userFollows)
+          .where(
+            and(
+              eq(userFollows.followingId, viewerId),
+              eq(userFollows.status, 'accepted'),
+              inArray(userFollows.followerId, ids),
+            ),
+          )
+      : Promise.resolve([] as { followerId: string }[]),
+  ]);
+
+  const followers = new Set(followsViewer.map((r) => r.followerId));
+  const byId = new Map(profiles.map((p) => [p.userId, p]));
+  for (const id of ids) {
+    const p = byId.get(id);
+    map.set(id, {
+      accentColor: p?.accentColor ?? null,
+      bio: p?.bio ?? '',
+      followsViewer: followers.has(id),
+    });
+  }
+  return map;
+}

@@ -4,6 +4,7 @@ import { useAuthStore } from '@/client/stores/auth';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { AuthenticatedShell } from './AuthenticatedShell';
 import { LandingNav } from '@/components/landing/LandingNav';
+import { QuickViewModal } from '@/components/watchly/QuickViewModal';
 
 /**
  * Client-side shell selector for the `(public)` route group. Replaces the
@@ -33,9 +34,12 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-x-clip">
       <LandingNav />
       <main className="flex-1 pt-22">{children}</main>
+      {/* Guests get Quick View too (AuthenticatedShell mounts its own). The
+          title API is public; account actions hide when signed out. */}
+      <QuickViewModal />
     </div>
   );
 }

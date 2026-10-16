@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { EyeOff, Eye } from 'lucide-react';
 import { buildImageUrl } from '@/lib/tmdb';
@@ -37,15 +37,15 @@ function yearOf(entry: EnrichedWatched): string {
  * only on the owner's view.
  */
 export function WatchedCard({ entry, onUnwatch, pending }: WatchedCardProps) {
-  const href = `/title/${entry.mediaType}/${entry.mediaId}`;
   const imageUrl = buildImageUrl(entry.data.posterPath, 'w500');
   const name = titleOf(entry);
   const year = yearOf(entry);
 
   return (
     <div className="group relative flex flex-col">
-      <Link
-        href={href}
+      <QuickViewLink
+        mediaType={entry.mediaType}
+        titleId={entry.mediaId}
         className="relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-card shadow-elevation-card transition-transform duration-300 hover:scale-105"
       >
         {imageUrl ? (
@@ -74,7 +74,7 @@ export function WatchedCard({ entry, onUnwatch, pending }: WatchedCardProps) {
           <Eye className="w-3 h-3" />
           Watched
         </div>
-      </Link>
+      </QuickViewLink>
 
       {onUnwatch && (
         <button

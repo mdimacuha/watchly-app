@@ -28,6 +28,7 @@ export const publicRoutes: string[] = [
   '/restore-account',
   '/privacy',
   '/terms',
+  '/changelogs',
   '/search',
   '/title',
   '/tv',

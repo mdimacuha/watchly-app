@@ -8,6 +8,9 @@ export interface MovieCard {
   releaseDate: string | null;
   voteAverage: number;
   overview: string;
+  /** List endpoints only (search/discover/popular). */
+  genreIds?: number[];
+  voteCount?: number;
   mediaType: "movie";
 }
 
@@ -19,6 +22,9 @@ export interface TvCard {
   firstAirDate: string | null;
   voteAverage: number;
   overview: string;
+  /** List endpoints only (search/discover/popular). */
+  genreIds?: number[];
+  voteCount?: number;
   mediaType: "tv";
 }
 
@@ -27,6 +33,9 @@ export interface PersonCard {
   name: string;
   profilePath: string | null;
   knownForDepartment: string;
+  /** Search results only (TMDB known_for), movie/tv entries. */
+  knownFor?: { id: number; mediaType: "movie" | "tv"; title: string }[];
+  popularity?: number;
   mediaType: "person";
 }
 

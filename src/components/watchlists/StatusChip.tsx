@@ -94,6 +94,21 @@ export const STATUS_META: Record<WatchlistItemStatus, StatusMeta> = {
   },
 };
 
+// List-view sort priority: "what should I watch now?" Actionable first
+// (in progress → queued), then blocked/on hold, then untriaged, then done.
+// Lower = higher in the list.
+export const STATUS_PRIORITY: Record<WatchlistItemStatus, number> = {
+  watching: 0,
+  rewatch: 1,
+  up_next: 2,
+  waiting_for_episode: 3,
+  waiting_for_season: 4,
+  paused: 5,
+  just_added: 6,
+  finished: 7,
+  dropped: 8,
+};
+
 // Display order across all UI: roughly follows the watching journey —
 // pre-watch → in-progress → on-hold → completed → re-experience → abandoned.
 export const STATUS_ORDER: WatchlistItemStatus[] = [

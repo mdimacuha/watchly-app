@@ -108,7 +108,10 @@ export function AuthenticatedShell({
            menu button on the left flips the nav open; the nav's own
            close (X) button (rendered by AppSidebar in fullPage mode)
            flips it shut. */}
-      <div className="md:hidden min-h-screen flex flex-col">
+      {/* overflow-x-clip: a too-wide child must never widen the page on
+          phones — that stretches the layout viewport and drags fixed popups
+          (Quick View, modals) off-screen. clip (not hidden) keeps sticky. */}
+      <div className="md:hidden min-h-screen flex flex-col overflow-x-clip">
         <div className="relative flex items-center justify-center h-14 px-4 border-b border-border/50 shrink-0">
           <button
             type="button"

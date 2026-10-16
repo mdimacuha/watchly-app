@@ -20,9 +20,9 @@ export interface ProviderCatalog {
   providers: CatalogProvider[];
 }
 
-// In-memory cache
-let cachedCatalog: ProviderCatalog | null = null;
-let lastFetchTime = 0;
+// In-memory cache, per region (availability differs by country — a single
+// slot used to serve whichever region was fetched first to everyone).
+const cache = new Map<string, { catalog: ProviderCatalog; fetchedAt: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function normalizeProviderName(name: string): string {
@@ -54,9 +54,9 @@ function assignStyle(id: number, key: string): ProviderStyle {
 export async function getProvidersCatalog(region: string = "US"): Promise<ProviderCatalog> {
   const now = Date.now();
 
-  // Return cached catalog if valid
-  if (cachedCatalog && now - lastFetchTime < CACHE_TTL_MS) {
-    return cachedCatalog;
+  const cached = cache.get(region);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.catalog;
   }
 
   try {
@@ -96,15 +96,13 @@ export async function getProvidersCatalog(region: string = "US"): Promise<Provid
       }),
     };
 
-    // Update cache
-    cachedCatalog = catalog;
-    lastFetchTime = now;
+    cache.set(region, { catalog, fetchedAt: now });
 
     return catalog;
   } catch (error) {
     console.error("Failed to fetch TMDB providers:", error);
     // Return empty catalog or stale cache if available
-    if (cachedCatalog) return cachedCatalog;
+    if (cached) return cached.catalog;
     return { updatedAt: new Date().toISOString(), providers: [] };
   }
 }

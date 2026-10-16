@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import {
   ArrowBigUp,
+  ArrowDownUp,
+  ListOrdered,
   Bookmark,
   Globe,
   LayoutGrid,
   LayoutPanelTop,
+  List,
   Lock,
   Pencil,
   Plus,
@@ -29,7 +32,9 @@ import {
   arrayMove,
   rectSortingStrategy,
   sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { BackLink } from '@/components/nav/BackLink';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -43,6 +48,7 @@ import {
   getWatchlistVoteStateAction,
   removeFromWatchlistAction,
   reorderWatchlistItemsAction,
+  setWatchlistItemRankAction,
   toggleWatchlistUpvoteAction,
   updateWatchlistAction,
 } from '@/actions/watchlists';
@@ -60,11 +66,20 @@ import { WatchlistFormModal } from './WatchlistFormModal';
 import { AddTitlesModal } from './AddTitlesModal';
 import { StatusFilterBar, type StatusFilter } from './StatusFilterBar';
 import { WatchlistBoardView } from './WatchlistBoardView';
+import { WatchlistListItem } from './WatchlistListItem';
+import { SortableWatchlistListItem } from './SortableWatchlistListItem';
+import { STATUS_PRIORITY } from './StatusChip';
 import { cn } from '@/lib/cn';
+import { placeAtRank } from '@/lib/ranking';
 
-type ViewMode = 'grid' | 'board';
+type ViewMode = 'grid' | 'list' | 'board';
 function isViewMode(v: string | null): v is ViewMode {
-  return v === 'grid' || v === 'board';
+  return v === 'grid' || v === 'list' || v === 'board';
+}
+
+type ListSort = 'rank' | 'auto';
+function isListSort(v: string | null): v is ListSort {
+  return v === 'rank' || v === 'auto';
 }
 
 const VALID_FILTERS: readonly StatusFilter[] = [
@@ -130,6 +145,7 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next === 'grid') params.delete('view');
     else params.set('view', next);
+    if (next !== 'list') params.delete('sort');
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
@@ -158,6 +174,44 @@ export function WatchlistDetailClient({
         ? items
         : items.filter((i) => i.status === statusFilter),
     [items, statusFilter],
+  );
+
+  // List sort (owner-only control): "rank" = curator's order (sortOrder),
+  // "auto" = Watchly's auto sort by status priority. Viewers always get rank.
+  const rawSort = searchParams.get('sort');
+  const listSort: ListSort = isOwner && isListSort(rawSort) ? rawSort : 'rank';
+
+  const setListSort = (next: ListSort) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'rank') params.delete('sort');
+    else params.set('sort', next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  // Auto keeps the curated order within each status (Array.sort is stable).
+  // Display-only — sortOrder is untouched.
+  const listItems = useMemo(
+    () =>
+      listSort === 'auto'
+        ? [...filteredItems].sort(
+            (a, b) => STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status],
+          )
+        : filteredItems,
+    [filteredItems, listSort],
+  );
+
+  // Rank = position among ranked items in the full curated list, so a
+  // filtered view still shows each title's real rank (e.g. #2, #7).
+  // Unranked ("Recently Added") items have no rank → null.
+  const rankById = useMemo(
+    () =>
+      new Map(
+        items
+          .filter((item) => item.rankedAt)
+          .map((item, index) => [item.id, index + 1]),
+      ),
+    [items],
   );
 
   // `${type}:${mediaId}` keys the add-titles modal uses to mark results that
@@ -227,17 +281,51 @@ export function WatchlistDetailClient({
     if (oldIndex < 0 || newIndex < 0) return;
 
     const previous = items;
-    const reordered = arrayMove(items, oldIndex, newIndex);
+    const moved = items[oldIndex];
+    // Dragging a "Recently Added" item places it into the ranking.
+    const rankedItemId = moved.rankedAt ? undefined : moved.id;
+    const rankedAt = new Date().toISOString();
+    const moveResult = arrayMove(items, oldIndex, newIndex).map((i) =>
+      i.id === rankedItemId ? { ...i, rankedAt } : i,
+    );
+    // Unranked items stay pinned on top (matches the server's ordering), so a
+    // ranked item dropped among them lands at the top of the ranking.
+    const reordered = [
+      ...moveResult.filter((i) => !i.rankedAt),
+      ...moveResult.filter((i) => i.rankedAt),
+    ];
     setItems(reordered);
 
     try {
       await reorderWatchlistItemsAction(
         watchlist.id,
         reordered.map((i) => i.id),
+        rankedItemId,
       );
     } catch {
       setItems(previous);
       toast.error('Could not save order', 'Please try again.');
+    }
+  };
+
+  // Typed rank from the List view: 0 = unrank, 1..n = position. Optimistic,
+  // using the same placement rule the server applies.
+  const handleRankChange = async (itemId: string, rank: number) => {
+    const previous = items;
+    const rankedAt = new Date().toISOString();
+    const placed = placeAtRank(items, itemId, rank, (i) => i.rankedAt !== null);
+    setItems(
+      placed.map((i) =>
+        i.id === itemId
+          ? { ...i, rankedAt: rank === 0 ? null : (i.rankedAt ?? rankedAt) }
+          : i,
+      ),
+    );
+    try {
+      await setWatchlistItemRankAction(watchlist.id, itemId, rank);
+    } catch {
+      setItems(previous);
+      toast.error('Could not update rank', 'Please try again.');
     }
   };
 
@@ -359,7 +447,9 @@ export function WatchlistDetailClient({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Wraps on phones: the owner's five buttons (~470px) used to widen
+            the whole page, which pushed every fixed popup off-screen. */}
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
           {FEATURES.watchlistUpvoting && watchlist.isPublic && (
             <WatchlistUpvoteButton watchlistId={watchlist.id} />
           )}
@@ -423,7 +513,7 @@ export function WatchlistDetailClient({
           {/* Filter bar (grid-mode only — board already shows all columns)
               and view toggle live on the same row. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {viewMode === 'grid' ? (
+            {viewMode !== 'board' ? (
               <StatusFilterBar
                 active={statusFilter}
                 counts={counts}
@@ -435,7 +525,12 @@ export function WatchlistDetailClient({
                 Drag cards between columns to change status.
               </span>
             )}
-            <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+            <div className="flex flex-wrap items-center gap-2">
+              {viewMode === 'list' && isOwner && (
+                <ListSortToggle listSort={listSort} onChange={setListSort} />
+              )}
+              <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+            </div>
           </div>
 
           {viewMode === 'board' ? (
@@ -451,6 +546,69 @@ export function WatchlistDetailClient({
               title="Nothing here yet"
               description="No titles match this filter. Try a different status."
             />
+          ) : viewMode === 'list' &&
+            listSort === 'rank' &&
+            isOwner &&
+            mounted &&
+            statusFilter === 'all' ? (
+            // Drag-to-rank: same rules as the grid (owner, unfiltered) and
+            // the same handleDragEnd → reorderWatchlistItemsAction.
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={listItems.map((i) => i.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ol className="flex flex-col">
+                  {listItems.map((item) => (
+                    <SortableWatchlistListItem
+                      key={item.id}
+                      item={item}
+                      rank={rankById.get(item.id) ?? null}
+                      maxRank={items.length}
+                      onRankChange={(rank) => handleRankChange(item.id, rank)}
+                      watchlistId={watchlist.id}
+                      isOwner={isOwner}
+                      onRemove={requestRemoveItem}
+                      onStatusChange={handleStatusChange}
+                      onNotesChange={handleNotesChange}
+                    />
+                  ))}
+                </ol>
+              </SortableContext>
+            </DndContext>
+          ) : viewMode === 'list' ? (
+            <ol className="flex flex-col">
+              {listItems.map((item) => (
+                // `layout` animates rows to their new spot when a status
+                // change re-sorts the Auto list, so the user can follow it.
+                <motion.li
+                  key={item.id}
+                  layout="position"
+                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                  className="border-b border-border last:border-b-0"
+                >
+                  <WatchlistListItem
+                    item={item}
+                    rank={listSort === 'rank' ? (rankById.get(item.id) ?? null) : undefined}
+                    maxRank={items.length}
+                    onRankChange={
+                      isOwner
+                        ? (rank) => handleRankChange(item.id, rank)
+                        : undefined
+                    }
+                    watchlistId={watchlist.id}
+                    isOwner={isOwner}
+                    onRemove={requestRemoveItem}
+                    onStatusChange={handleStatusChange}
+                    onNotesChange={handleNotesChange}
+                  />
+                </motion.li>
+              ))}
+            </ol>
           ) : isOwner && mounted && statusFilter === 'all' ? (
             // DnD is only enabled in the unfiltered view — reordering a
             // filtered subset against an unfiltered sortOrder array would
@@ -631,6 +789,14 @@ function ViewToggle({ viewMode, onChange }: ViewToggleProps) {
         Grid
       </ToggleButton>
       <ToggleButton
+        active={viewMode === 'list'}
+        onClick={() => onChange('list')}
+        label="List view"
+      >
+        <List className="w-3.5 h-3.5" />
+        List
+      </ToggleButton>
+      <ToggleButton
         active={viewMode === 'board'}
         onClick={() => onChange('board')}
         label="Board view"
@@ -642,15 +808,51 @@ function ViewToggle({ viewMode, onChange }: ViewToggleProps) {
   );
 }
 
+const AUTO_SORT_HINT =
+  "Watchly's auto sort: Watching first, then Rewatch, Up Next, waiting, paused, new, finished, dropped.";
+
+function ListSortToggle({
+  listSort,
+  onChange,
+}: {
+  listSort: ListSort;
+  onChange: (next: ListSort) => void;
+}) {
+  return (
+    <div className="inline-flex items-center rounded-full border border-border bg-card p-0.5">
+      <ToggleButton
+        active={listSort === 'rank'}
+        onClick={() => onChange('rank')}
+        label="Ranked: your curated order"
+        title="Your curated order. Drag to rank."
+      >
+        <ListOrdered className="w-3.5 h-3.5" />
+        Ranked
+      </ToggleButton>
+      <ToggleButton
+        active={listSort === 'auto'}
+        onClick={() => onChange('auto')}
+        label="Auto: Watchly's auto sort by status"
+        title={AUTO_SORT_HINT}
+      >
+        <ArrowDownUp className="w-3.5 h-3.5" />
+        Auto
+      </ToggleButton>
+    </div>
+  );
+}
+
 function ToggleButton({
   active,
   onClick,
   label,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -658,6 +860,7 @@ function ToggleButton({
       type="button"
       onClick={onClick}
       aria-label={label}
+      title={title}
       aria-pressed={active}
       className={cn(
         'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full transition-colors cursor-pointer',

@@ -27,6 +27,7 @@ import { useAuthStore } from '@/client/stores/auth';
 import { useToast } from '@/hooks/useToast';
 import { SidebarNavItem } from './SidebarNavItem';
 import { SidebarAnnouncementCard } from './SidebarAnnouncementCard';
+import { useChangelogPromo } from '@/components/changelog/ChangelogPromoProvider';
 import { ExperimentalBadge } from '@/components/watchly/ExperimentalBadge';
 import { RegionButton } from '@/components/region/RegionButton';
 import { IconButton } from '@/components/ui/icon-button';
@@ -51,10 +52,10 @@ const sidebarSpring = { type: 'spring' as const, stiffness: 300, damping: 30 };
 
 const MENU_ITEMS = [
   { href: '/search', icon: Search, label: 'Search', experimental: false },
-  { href: '/for-you', icon: Sparkles, label: 'For You', experimental: false },
+  { href: '/for-you', icon: Sparkles, label: 'For You', experimental: true },
   // Swipe is still being tuned (recommendation weights, gesture feel) —
   // flag it as experimental so users know what they're stepping into.
-  { href: '/swipe', icon: ArrowLeftRight, label: 'Watchly Swipe', experimental: true },
+  { href: '/swipe', icon: ArrowLeftRight, label: 'Watchly Swipe', experimental: false },
   { href: '/watchlists', icon: Bookmark, label: 'Watchlists', experimental: false },
   { href: '/favorites', icon: Heart, label: 'Favorites', experimental: false },
 ] as const;
@@ -88,6 +89,7 @@ export function AppSidebar({
   const clearAuth = useAuthStore((s) => s.clear);
   const [signingOut, setSigningOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const promo = useChangelogPromo();
 
   const handleSignOut = async () => {
     if (signingOut) return;
@@ -428,15 +430,18 @@ export function AppSidebar({
       {/* ---- Feature announcement (expanded / full-page only) ----
           Sits in a shrink-0 block just above the footer so the nav above
           keeps its own scroll (flex-1 overflow-y-auto) and this never
-          pushes menu items off-screen. Hidden in the collapsed icon rail. */}
-      {!collapsed && (
+          pushes menu items off-screen. Hidden in the collapsed icon rail.
+          Copy comes from the newest changelog's "Promotional" section
+          (changelogs/*.md); the dismissal is keyed per release. */}
+      {!collapsed && promo && (
         <div className="shrink-0 px-3 pt-2">
           <SidebarAnnouncementCard
-            title="Introducing Watchly Swipe"
-            description="Swipe through picks tuned to your taste and build your watchlist in seconds."
-            ctaLabel="Try it now"
-            ctaHref={PATHS.SWIPE}
-            storageKey="watchly_announce_swipe_v1"
+            key={promo.slug}
+            title={promo.title}
+            description={promo.description}
+            ctaLabel={promo.ctaLabel}
+            ctaHref={promo.ctaHref}
+            storageKey={`watchly_announce_${promo.slug}`}
             onCtaClick={handleMobileNav}
             // Sidebar is always-dark: override the theme-flipping card tokens
             // with white-alpha surfaces so it stays correct in light mode too.
@@ -472,6 +477,16 @@ export function AppSidebar({
             className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Privacy
+          </Link>
+          <span aria-hidden className="opacity-40">
+            ·
+          </span>
+          <Link
+            href={PATHS.CHANGELOGS}
+            onClick={handleMobileNav}
+            className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            What&apos;s new
           </Link>
           <span aria-hidden className="opacity-40">
             ·

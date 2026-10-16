@@ -15,6 +15,7 @@ import {
 } from '@/services/forYou';
 import { markAsWatched } from '@/services/watched';
 import { revalidatePath } from 'next/cache';
+import { getForYouPool, type ForYouPool } from '@/services/forYou/pool';
 
 async function resolveRegion(userId: string): Promise<string> {
   // Same priority as the rest of the app: cookie → DB pref → 'US'.
@@ -104,4 +105,15 @@ export async function markAsWatchedAction(
   );
   revalidatePath('/for-you');
   return where;
+}
+
+/**
+ * The shared For You candidate pool (one build per request; layouts slice
+ * it). See services/forYou/pool.ts.
+ */
+export async function getForYouPoolAction(): Promise<ForYouPool> {
+  const session = await getSession();
+  if (!session) throw new UnauthorizedAppError();
+  const region = await resolveRegion(session.userId);
+  return getForYouPool(session.userId, region);
 }

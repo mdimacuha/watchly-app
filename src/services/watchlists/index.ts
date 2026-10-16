@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { watchlists, watchlistItems, users, userProfiles } from '@/db/schema';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { recordActivity } from '@/services/activity/record';
 import {
@@ -8,6 +8,8 @@ import {
   updateWatchlistSchema,
   updateItemStatusSchema,
   updateItemNotesSchema,
+  reorderItemsSchema,
+  setItemRankSchema,
   type CreateWatchlistInput,
   type UpdateWatchlistInput,
   type WatchlistMediaType,
@@ -21,6 +23,7 @@ import {
 import { requireVerifiedOrInGrace } from '@/services/auth/verificationGate';
 import { moderateText } from '@/services/moderation/contentModeration';
 import { logger } from '@/lib/log';
+import { placeAtRank } from '@/lib/ranking';
 
 // Helper: runs name + description through moderateText. Throws a
 // generic ValidationAppError on profanity / slur match so the user
@@ -324,9 +327,14 @@ export async function getWatchlist(
     .select()
     .from(watchlistItems)
     .where(eq(watchlistItems.watchlistId, watchlistId))
-    // sortOrder is the explicit manual ordering (set by reorder + addItem).
-    // Higher = top. createdAt-desc breaks ties for items that share an order.
-    .orderBy(desc(watchlistItems.sortOrder), desc(watchlistItems.createdAt));
+    // Unranked ("Recently Added", rankedAt null) items are pinned on top.
+    // Then sortOrder, the explicit manual ordering (set by reorder + addItem):
+    // higher = top. createdAt-desc breaks ties for items that share an order.
+    .orderBy(
+      sql`${watchlistItems.rankedAt} is not null`,
+      desc(watchlistItems.sortOrder),
+      desc(watchlistItems.createdAt),
+    );
 
   return { watchlist, items, isOwner, owner };
 }
@@ -449,30 +457,110 @@ export async function bulkAddCollectionParts(
 /**
  * Persist a new visual order for the entire list. `orderedIds` lists item
  * UUIDs from top to bottom. We assign descending sortOrders so the first
- * id gets the highest sortOrder.
+ * id gets the highest sortOrder. `rankedItemId` (the item just dragged) is
+ * marked ranked if it wasn't already, which moves it out of "Recently Added".
  */
 export async function reorderItems(
   watchlistId: string,
   userId: string,
   orderedIds: string[],
+  rankedItemId?: string,
 ): Promise<void> {
+  const parsed = reorderItemsSchema.safeParse({ orderedIds, rankedItemId });
+  if (!parsed.success) {
+    throw new ValidationAppError('Invalid reorder input', parsed.error.flatten());
+  }
   await requireOwnedWatchlist(watchlistId, userId);
   if (orderedIds.length === 0) return;
 
   await db.transaction(async (tx) => {
-    for (let i = 0; i < orderedIds.length; i++) {
-      const sortOrder = orderedIds.length - 1 - i;
+    if (rankedItemId) {
       await tx
         .update(watchlistItems)
-        .set({ sortOrder, updatedAt: new Date() })
+        .set({ rankedAt: new Date() })
         .where(
           and(
-            eq(watchlistItems.id, orderedIds[i]),
+            eq(watchlistItems.id, rankedItemId),
             eq(watchlistItems.watchlistId, watchlistId),
+            isNull(watchlistItems.rankedAt),
           ),
         );
     }
+
+    await writeSortOrders(tx, watchlistId, orderedIds);
   });
+}
+
+/**
+ * Set one item's rank. 0 = unranked (back to "Recently Added", pinned on
+ * top); 1..n = that position among ranked items, where n is the number of
+ * items in the list. The new order is computed here from the stored order,
+ * not trusted from the client.
+ */
+export async function setItemRank(
+  watchlistId: string,
+  userId: string,
+  itemId: string,
+  rank: number,
+): Promise<void> {
+  const parsed = setItemRankSchema.safeParse({ itemId, rank });
+  if (!parsed.success) {
+    throw new ValidationAppError('Invalid rank input', parsed.error.flatten());
+  }
+  await requireOwnedWatchlist(watchlistId, userId);
+
+  await db.transaction(async (tx) => {
+    // Same ordering as getWatchlist: unranked first, then by sortOrder.
+    const rows = await tx
+      .select({ id: watchlistItems.id, rankedAt: watchlistItems.rankedAt })
+      .from(watchlistItems)
+      .where(eq(watchlistItems.watchlistId, watchlistId))
+      .orderBy(
+        sql`${watchlistItems.rankedAt} is not null`,
+        desc(watchlistItems.sortOrder),
+        desc(watchlistItems.createdAt),
+      );
+
+    const target = rows.find((r) => r.id === itemId);
+    if (!target) throw new NotFoundAppError('Watchlist item not found');
+    if (rank > rows.length) {
+      throw new ValidationAppError(`Rank must be between 0 and ${rows.length}`);
+    }
+
+    await tx
+      .update(watchlistItems)
+      .set({ rankedAt: rank === 0 ? null : (target.rankedAt ?? new Date()) })
+      .where(eq(watchlistItems.id, itemId));
+
+    const ordered = placeAtRank(rows, itemId, rank, (r) => r.rankedAt !== null);
+    await writeSortOrders(
+      tx,
+      watchlistId,
+      ordered.map((r) => r.id),
+    );
+  });
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** `orderedIds` top to bottom → descending sortOrders (first id = highest). */
+async function writeSortOrders(
+  tx: Tx,
+  watchlistId: string,
+  orderedIds: string[],
+): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    const sortOrder = orderedIds.length - 1 - i;
+    await tx
+      .update(watchlistItems)
+      .set({ sortOrder, updatedAt: new Date() })
+      .where(
+        and(
+          eq(watchlistItems.id, orderedIds[i]),
+          eq(watchlistItems.watchlistId, watchlistId),
+        ),
+      );
+  }
 }
 
 async function nextSortOrder(watchlistId: string): Promise<number> {

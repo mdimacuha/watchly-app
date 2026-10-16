@@ -6,6 +6,8 @@ import type { PublicUserCard } from '@/services/social';
 
 interface FollowSuggestionsRowProps {
   suggestions: PublicUserCard[];
+  /** Omit the built-in heading (when the caller provides its own, e.g. a collapsible header). */
+  hideHeading?: boolean;
 }
 
 /**
@@ -15,17 +17,20 @@ interface FollowSuggestionsRowProps {
  */
 export function FollowSuggestionsRow({
   suggestions,
+  hideHeading = false,
 }: FollowSuggestionsRowProps) {
   if (suggestions.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-primary" />
-        <h3 className="text-sm uppercase tracking-wider font-semibold text-muted-foreground">
-          People you might know
-        </h3>
-      </div>
+      {!hideHeading && (
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <h3 className="text-sm uppercase tracking-wider font-semibold text-muted-foreground">
+            People you might know
+          </h3>
+        </div>
+      )}
       <div className="overflow-x-auto scrollbar-hover -mx-4 px-4 snap-x snap-mandatory">
         <div className="flex gap-3 min-w-max pb-2">
           {suggestions.map((u) => (

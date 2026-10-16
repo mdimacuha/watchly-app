@@ -1,6 +1,9 @@
 import { tmdbFetch } from "@/server/tmdb/client";
 import { TmdbVideo, Genre } from "@/server/tmdb/types";
 import { getGenreName } from "@/lib/tmdb-genres";
+import { z } from "zod";
+import { TmdbError } from "@/server/tmdb/errors";
+import { NotFoundAppError, ValidationAppError } from "@/utils/errors";
 
 export interface PersonDetails {
   id: number;
@@ -52,6 +55,8 @@ interface TmdbCombinedCredit {
   title?: string;
   name?: string;
   poster_path: string | null;
+  backdrop_path?: string | null;
+  overview?: string;
   release_date?: string;
   first_air_date?: string;
   character?: string;
@@ -219,4 +224,131 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
       })),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Quick View — a light person preview (no per-credit provider lookups).
+// ---------------------------------------------------------------------------
+
+export interface PersonQuickViewCredit {
+  id: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  character: string | null;
+  year: string | null;
+  posterPath: string | null;
+}
+
+export interface PersonQuickViewPayload {
+  details: PersonDetails;
+  /** Top acting roles, most notable first. */
+  topActing: PersonQuickViewCredit[];
+}
+
+const TOP_ACTING_LIMIT = 5;
+// TMDB TV genres that are appearances, not acting roles.
+const NON_ACTING_GENRES = new Set([10763 /* News */, 10764 /* Reality */, 10767 /* Talk */]);
+const SELF_CHARACTER = /^(self|himself|herself|themselves)\b/i;
+
+const personIdSchema = z.coerce.number().int().positive();
+
+export async function getPersonQuickView(id: string): Promise<PersonQuickViewPayload> {
+  const parsed = personIdSchema.safeParse(id);
+  if (!parsed.success) throw new ValidationAppError("Invalid person id");
+  const personId = parsed.data;
+
+  try {
+    const [details, credits] = await Promise.all([
+      tmdbFetch<TmdbPersonDetails>(`/person/${personId}`),
+      tmdbFetch<TmdbCombinedCredits>(`/person/${personId}/combined_credits`),
+    ]);
+
+    const topActing = rankActingCredits(credits.cast)
+      .slice(0, TOP_ACTING_LIMIT)
+      .map((c) => ({
+        id: c.id,
+        mediaType: c.media_type,
+        title: c.title || c.name || "Unknown Title",
+        character: c.character || null,
+        year: (c.release_date || c.first_air_date || "").slice(0, 4) || null,
+        posterPath: c.poster_path,
+      }));
+
+    return {
+      details: {
+        id: details.id,
+        name: details.name,
+        biography: details.biography,
+        birthday: details.birthday,
+        deathday: details.deathday,
+        placeOfBirth: details.place_of_birth,
+        profilePath: details.profile_path,
+        knownForDepartment: details.known_for_department,
+      },
+      topActing,
+    };
+  } catch (err) {
+    if (err instanceof TmdbError && err.status === 404) {
+      throw new NotFoundAppError("Person not found");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Acting credits, most notable first: most-voted roles (a steadier signal
+ * of notable work than TMDB popularity, which tracks current buzz), without
+ * talk/news/reality appearances or "Self" roles, one entry per title.
+ */
+function rankActingCredits(cast: TmdbCombinedCredit[]): TmdbCombinedCredit[] {
+  const seen = new Set<string>();
+  return cast
+    .filter(
+      (c) =>
+        (c.media_type === "movie" || c.media_type === "tv") &&
+        !c.genre_ids?.some((g) => NON_ACTING_GENRES.has(g)) &&
+        !SELF_CHARACTER.test(c.character ?? ""),
+    )
+    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
+    .filter((c) => {
+      const key = `${c.media_type}:${c.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+export interface PersonTopCredit {
+  id: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  year: string | null;
+  posterPath: string | null;
+  backdropPath: string | null;
+  overview: string;
+  genreIds: number[];
+  character: string | null;
+}
+
+/**
+ * A person's most notable acting credits (with posters), for the search
+ * page's "Movies & shows with <name>" section. One TMDB call (cached 1h,
+ * shared with the person Quick View).
+ */
+export async function getPersonTopCredits(personId: number, limit: number): Promise<PersonTopCredit[]> {
+  const credits = await tmdbFetch<TmdbCombinedCredits>(`/person/${personId}/combined_credits`);
+  return rankActingCredits(credits.cast)
+    .filter((c) => c.poster_path)
+    .slice(0, limit)
+    .map((c) => ({
+      id: c.id,
+      mediaType: c.media_type,
+      title: c.title || c.name || "Unknown Title",
+      year: (c.release_date || c.first_air_date || "").slice(0, 4) || null,
+      posterPath: c.poster_path,
+      backdropPath: c.backdrop_path ?? null,
+      overview: c.overview ?? "",
+      genreIds: c.genre_ids ?? [],
+      character: c.character || null,
+    }));
 }

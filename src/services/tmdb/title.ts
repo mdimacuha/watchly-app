@@ -55,8 +55,23 @@ export interface ReleaseRow {
   sortKey: number;
 }
 
+export interface CrewPerson {
+  id: number;
+  name: string;
+}
+
+export interface KeyCrew {
+  /** TV only (TMDB created_by). */
+  creators: CrewPerson[];
+  directors: CrewPerson[];
+  writers: CrewPerson[];
+  producers: CrewPerson[];
+}
+
 export interface TitleInfoPanelData {
   studios: StudioTag[];
+  /** Key people, each list deduped and capped. Empty lists = not on TMDB. */
+  keyCrew: KeyCrew;
   countries: CountryTag[];
   primaryLanguage: string | null;
   spokenLanguages: string[];
@@ -185,6 +200,7 @@ interface TmdbMovieDetails {
 
 interface TmdbTvDetails {
   name: string;
+  created_by?: { id: number; name: string }[];
   first_air_date: string;
   overview: string;
   episode_run_time: number[];
@@ -407,6 +423,7 @@ export async function getTitlePagePayload({
   // New fields
   let collection: TitlePagePayload["collection"] = null;
   let tvSeasons: TitlePagePayload["tvSeasons"] = null;
+  let creators: CrewPerson[] = [];
 
   if (mediaType === "movie") {
     const d = detailsData as TmdbMovieDetails;
@@ -431,6 +448,7 @@ export async function getTitlePagePayload({
   } else {
     const d = detailsData as TmdbTvDetails;
     title = d.name;
+    creators = (d.created_by ?? []).map((c) => ({ id: c.id, name: c.name }));
     if (d.first_air_date) {
       year = new Date(d.first_air_date).getFullYear().toString();
     }
@@ -470,7 +488,8 @@ export async function getTitlePagePayload({
     .filter(t => t.iso_3166_1 === "US" || t.iso_3166_1 === "GB") // Limit to English-ish regions
     .map(t => t.title);
   
-  const infoPanelData: TitleInfoPanelData = {
+  // keyCrew is filled in once credits are normalized below.
+  const infoPanelData: Omit<TitleInfoPanelData, "keyCrew"> = {
     studios,
     countries,
     primaryLanguage,
@@ -556,6 +575,8 @@ export async function getTitlePagePayload({
     department: c.department,
     profilePath: c.profile_path,
   }));
+
+  const keyCrew = buildKeyCrew(crew, creators);
 
   const topCast = cast
     .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -649,8 +670,42 @@ export async function getTitlePagePayload({
     providerSourceNote,
     justWatchUrl,
     fallbackRegion,
-    infoPanelData,
+    infoPanelData: { ...infoPanelData, keyCrew },
     releases,
     feedItems,
+  };
+}
+
+const KEY_CREW_LIMIT = 4;
+
+/** People in `crew` matching `match`, deduped by person and capped. */
+function pickCrew(crew: CrewMember[], match: (c: CrewMember) => boolean): CrewPerson[] {
+  const seen = new Set<number>();
+  const people: CrewPerson[] = [];
+  for (const c of crew) {
+    if (!match(c) || seen.has(c.id)) continue;
+    seen.add(c.id);
+    people.push({ id: c.id, name: c.name });
+    if (people.length === KEY_CREW_LIMIT) break;
+  }
+  return people;
+}
+
+/**
+ * Director / writer / producer lists for the Details tab. Producers prefer
+ * the "Producer" credit; TV series often only list Executive Producers, so
+ * fall back to those. Series-level directors are rare on TV (they're
+ * per-episode), so that list is often empty there.
+ */
+function buildKeyCrew(crew: CrewMember[], creators: CrewPerson[]): KeyCrew {
+  const producers = pickCrew(crew, (c) => c.job === "Producer");
+  return {
+    creators: creators.slice(0, KEY_CREW_LIMIT),
+    directors: pickCrew(crew, (c) => c.job === "Director"),
+    writers: pickCrew(crew, (c) => c.department === "Writing"),
+    producers:
+      producers.length > 0
+        ? producers
+        : pickCrew(crew, (c) => c.job === "Executive Producer"),
   };
 }

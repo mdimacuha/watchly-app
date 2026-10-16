@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import Image from 'next/image';
-import { History, Heart, Bookmark, X, Info, ListPlus } from 'lucide-react';
+import { History, Heart, ThumbsUp, X, Info, ListPlus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
@@ -13,7 +13,7 @@ import { FilterBar } from '@/components/watchly/FilterBar';
 import { EmptyState } from '@/components/watchly/EmptyState';
 import { PosterGridSkeleton } from '@/components/watchly/skeletons';
 import { AddToWatchlistPicker } from '@/components/watchlists/AddToWatchlistPicker';
-import { getSwipeHistoryAction } from '@/actions/swipe';
+import { getSwipeHistoryAction, recordSwipeAction } from '@/actions/swipe';
 import type { SwipeAction, SwipeHistoryItem } from '@/services/swipe';
 
 interface SwipeHistoryClientProps {
@@ -25,7 +25,7 @@ type FilterId = 'all' | SwipeAction;
 const FILTERS: { id: FilterId; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'liked', label: 'Liked' },
-  { id: 'saved', label: 'Saved' },
+  { id: 'saved', label: 'Favorited' },
   { id: 'passed', label: 'Passed' },
   { id: 'opened', label: 'Opened' },
 ];
@@ -34,10 +34,10 @@ const ACTION_META: Record<
   SwipeAction,
   { label: string; icon: LucideIcon; className: string }
 > = {
-  liked: { label: 'Liked', icon: Heart, className: 'bg-primary/15 text-primary' },
+  liked: { label: 'Liked', icon: ThumbsUp, className: 'bg-primary/15 text-primary' },
   saved: {
-    label: 'Saved',
-    icon: Bookmark,
+    label: 'Favorited',
+    icon: Heart,
     className: 'bg-primary/15 text-primary',
   },
   passed: {
@@ -53,6 +53,15 @@ const ACTION_META: Record<
 };
 
 const HISTORY_PAGE_LIMIT = 24;
+
+/** Verdicts a History card can be changed to ("opened" isn't a decision). */
+const DECISIONS = ['liked', 'saved', 'passed'] as const;
+type Decision = (typeof DECISIONS)[number];
+const DECISION_VERB: Record<Decision, string> = {
+  liked: 'Like',
+  saved: 'Favorite',
+  passed: 'Pass',
+};
 
 /**
  * Renders the swipe-history grid with per-action filtering. Each card opens
@@ -70,6 +79,39 @@ export function SwipeHistoryClient({ initialItems }: SwipeHistoryClientProps) {
   } | null>(null);
   const toast = useToast();
   const openQuickView = useUIStore((s) => s.openQuickView);
+
+  // Change a past verdict in place (e.g. a pass you regret). Optimistic:
+  // the card moves to the top (History is ordered by latest decision) or
+  // leaves the list if it no longer matches the active filter.
+  const handleChangeDecision = async (item: SwipeHistoryItem, action: Decision) => {
+    if (item.action === action) return;
+    const previous = items;
+    const updated = { ...item, action, swipedAt: new Date().toISOString() };
+    setItems((prev) => {
+      const rest = prev.filter((i) => i.swipeId !== item.swipeId);
+      return filter === 'all' || filter === action ? [updated, ...rest] : rest;
+    });
+    try {
+      const res = await recordSwipeAction({
+        tmdbId: Number(item.mediaId),
+        mediaType: item.mediaType,
+        action,
+        source: 'manual',
+      });
+      toast.success(
+        action === 'saved' && !res.favoriteAdded
+          ? 'Already in favorites'
+          : `Changed to label`,
+        item.title || undefined,
+      );
+    } catch (err) {
+      setItems(previous);
+      toast.error(
+        'Could not change decision',
+        err instanceof Error ? err.message : 'Please try again.',
+      );
+    }
+  };
 
   const handleFilter = (id: string) => {
     const nextFilter = id as FilterId;
@@ -118,6 +160,7 @@ export function SwipeHistoryClient({ initialItems }: SwipeHistoryClientProps) {
               key={item.swipeId}
               item={item}
               onQuickView={() => openQuickView(item.mediaType, item.mediaId)}
+              onChangeDecision={(action) => void handleChangeDecision(item, action)}
               onAddToWatchlist={() =>
                 setPickerTarget({
                   mediaType: item.mediaType,
@@ -145,9 +188,11 @@ function HistoryCard({
   item,
   onQuickView,
   onAddToWatchlist,
+  onChangeDecision,
 }: {
   item: SwipeHistoryItem;
   onQuickView: () => void;
+  onChangeDecision: (action: Decision) => void;
   onAddToWatchlist: () => void;
 }) {
   const poster = buildImageUrl(item.posterPath, 'w342');
@@ -231,6 +276,40 @@ function HistoryCard({
               <span>{swipedOn}</span>
             </>
           )}
+        </div>
+
+        {/* Change decision — the current verdict is pressed. Opened-only
+            rows have none pressed, so this is also "decide now". */}
+        <div
+          role="group"
+          aria-label={`Change decision for ${displayTitle}`}
+          className="mt-1 flex items-center gap-1"
+        >
+          {DECISIONS.map((action) => {
+            const Icon = ACTION_META[action].icon;
+            const pressed = item.action === action;
+            return (
+              <button
+                key={action}
+                type="button"
+                onClick={() => onChangeDecision(action)}
+                aria-pressed={pressed}
+                aria-label={DECISION_VERB[action]}
+                title={DECISION_VERB[action]}
+                className={cn(
+                  'inline-flex h-9 flex-1 items-center justify-center rounded-md border transition-colors cursor-pointer',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  pressed
+                    ? action === 'passed'
+                      ? 'border-destructive/40 bg-destructive/15 text-destructive'
+                      : 'border-primary/40 bg-primary/15 text-primary'
+                    : 'border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                )}
+              >
+                <Icon className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

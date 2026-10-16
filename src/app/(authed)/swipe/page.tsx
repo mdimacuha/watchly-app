@@ -27,11 +27,11 @@ export default async function SwipePage() {
           <ExperimentalBadge />
         </div>
         <p className="hidden sm:block text-xs text-muted-foreground">
-          Drag ← Pass · Drag → Like · S to Save · Enter to Open
+          ← Pass · → Like · F Favorite · Enter Details · Z Undo
         </p>
       </div>
       <p className="text-sm text-muted-foreground -mt-2 sm:hidden">
-        Swipe left to Pass · right to Like · tap Save or Details
+        Swipe left to Pass · right to Like · tap ♡ to Favorite
       </p>
 
       {initial.items.length === 0 ? (

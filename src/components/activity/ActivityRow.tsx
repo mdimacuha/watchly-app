@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import type { ActivityItem } from '@/services/activity/types';
 import { ActivityAvatar } from './ActivityAvatar';
@@ -137,7 +138,7 @@ export function ActivityRow({ item }: ActivityRowProps) {
         >
           {avatarAndContent}
         </Link>
-        <Link
+        <QuickViewLink
           href={item.posterHref}
           className="hidden sm:block shrink-0 ml-3 rounded-md overflow-hidden hover:opacity-80 transition-opacity"
           aria-label={`Go to ${item.titles[0]}`}
@@ -149,7 +150,7 @@ export function ActivityRow({ item }: ActivityRowProps) {
             width={44}
             height={66}
           />
-        </Link>
+        </QuickViewLink>
       </div>
     );
   }
@@ -164,9 +165,9 @@ export function ActivityRow({ item }: ActivityRowProps) {
 
   if (item.href) {
     return (
-      <Link href={item.href} className={cn(baseClass, hoverClass)}>
+      <QuickViewLink href={item.href} className={cn(baseClass, hoverClass)}>
         {inner}
-      </Link>
+      </QuickViewLink>
     );
   }
 

@@ -5,7 +5,7 @@ import {
   gatherCandidates,
   enrichCandidate,
   loadExcludeSet,
-  type Seed,
+  type RankedCandidate,
 } from '@/services/forYou';
 import { getUserRegion } from '@/services/preferences';
 import { getSelectedProviders } from '@/services/preferences/forYouPrefs';
@@ -13,6 +13,7 @@ import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import { getSwipeKeySet, getSwipeSignals } from './index';
 import {
+  DECIDED_SWIPE_ACTIONS,
   SWIPE_DECK_DEFAULT_LIMIT,
   SWIPE_WILDCARD_EVERY,
 } from './constants';
@@ -57,6 +58,9 @@ export interface SwipeDeckItem {
 // is a TMDB detail fetch with append_to_response — bounded fan-out is
 // what keeps this responsive on free TMDB tier.
 const SWIPE_SCORING_POOL = 30;
+// Deepest TMDB /popular page the top-up will read (20 movies + 20 shows
+// per page), bounding TMDB calls per deck request.
+const POPULAR_MAX_PAGES = 5;
 
 // Multipliers for the swipe score on top of the For You gatherCandidates
 // tally. Tuned so personalization (seed overlap) outranks raw popularity
@@ -108,9 +112,10 @@ export async function getSwipeDeck(
     await Promise.all([
       pickSeeds(userId),
       loadExcludeSet(userId),
-      // All swipes — liked + saved + passed + opened — get excluded so
-      // the user doesn't see a title twice in the deck.
-      getSwipeKeySet(userId),
+      // Decided titles (liked / saved / passed) are excluded so the user
+      // doesn't see them twice. "opened" is NOT a decision — it's a Quick
+      // View peek — so a peeked title can still come back around.
+      getSwipeKeySet(userId, DECIDED_SWIPE_ACTIONS),
       getSwipeSignals(userId),
       getSelectedProviders(userId),
     ]);
@@ -130,10 +135,24 @@ export async function getSwipeDeck(
   //      meaningful taste data (favorites / watchlist / liked swipes).
   //   2. Popular fallback when they don't — keeps the deck warm for
   //      brand-new users so they can start swiping immediately.
-  const ranked =
-    seeds.length > 0
-      ? await gatherCandidates(seeds, excludeSet)
-      : await popularFallback(region, excludeSet);
+  //   3. Top-up: when seeds yield fewer than a scoring pool's worth (heavy
+  //      swipers burn through their seed pool), fill the rest from popular
+  //      titles, paging deeper as earlier pages get decided — so the deck
+  //      doesn't dead-end at "all caught up".
+  let ranked: RankedCandidate[] =
+    seeds.length > 0 ? await gatherCandidates(seeds, excludeSet) : [];
+  if (ranked.length < SWIPE_SCORING_POOL) {
+    const taken = new Set([
+      ...excludeSet,
+      ...ranked.map((c) => `${c.mediaType}:${c.tmdbId}`),
+    ]);
+    const filler = await popularFallback(
+      region,
+      taken,
+      SWIPE_SCORING_POOL - ranked.length,
+    );
+    ranked = [...ranked, ...filler];
+  }
 
   // Filter by media-type intent BEFORE enrichment so we don't burn
   // TMDB fetches on rows that can't appear in the deck anyway.
@@ -351,31 +370,27 @@ async function tallyPassedGenres(
 }
 
 /**
- * Returns a RankedCandidate-shaped list of popular titles (mix of
- * movie + tv) for users with no taste data. Each item has `score = 1`
- * (no seed overlap signal to compute) and a synthetic seed of null —
- * the swipe scorer mostly drives off provider + rating from here.
+ * Popular titles (mix of movie + tv) as RankedCandidates — the whole pool
+ * for users with no taste data, and the top-up when seeds run thin. Each
+ * item has `score = 1` (no seed overlap) and no seed; the swipe scorer
+ * drives off provider + rating.
+ *
+ * Pages through TMDB /popular until `want` undecided titles are found (or
+ * POPULAR_MAX_PAGES), so once page 1 has been swiped, later pages take
+ * over automatically — no client cursor needed. Pages are server-cached
+ * (~1h), so revisits are cheap.
  */
 async function popularFallback(
   region: string,
   excludeSet: Set<string>,
-): Promise<{ tmdbId: number; mediaType: 'movie' | 'tv'; score: number; topSeed: Seed | null }[]> {
+  want: number,
+): Promise<RankedCandidate[]> {
   // Lazy require to avoid a cycle with services/tmdb (which imports
   // services/preferences which imports services/forYou which would
   // import us if we sat in that graph).
   const { movie, tv } = await import('@/server/tmdb');
-  const [movies, shows] = await Promise.all([
-    movie.popular({ page: 1, region }).catch(() => ({ results: [] })),
-    tv.popular({ page: 1, region }).catch(() => ({ results: [] })),
-  ]);
 
-  const out: {
-    tmdbId: number;
-    mediaType: 'movie' | 'tv';
-    score: number;
-    topSeed: Seed | null;
-  }[] = [];
-
+  const out: RankedCandidate[] = [];
   const seen = new Set<string>();
   const push = (r: { id: number }, type: 'movie' | 'tv') => {
     const key = `${type}:${r.id}`;
@@ -384,17 +399,25 @@ async function popularFallback(
     out.push({ tmdbId: r.id, mediaType: type, score: 1, topSeed: null });
   };
 
-  // Interleave so the deck alternates movie + tv visually.
-  const max = Math.max(movies.results.length, shows.results.length);
-  for (let i = 0; i < max; i++) {
-    if (movies.results[i]) {
-      // Use the mapper to align shape with what gatherCandidates returns.
-      const m = mapMovie({ ...movies.results[i], media_type: 'movie' });
-      push(m, 'movie');
-    }
-    if (shows.results[i]) {
-      const t = mapTv({ ...shows.results[i], media_type: 'tv' });
-      push(t, 'tv');
+  for (let page = 1; page <= POPULAR_MAX_PAGES && out.length < want; page++) {
+    const [movies, shows] = await Promise.all([
+      movie.popular({ page, region }).catch(() => ({ results: [] })),
+      tv.popular({ page, region }).catch(() => ({ results: [] })),
+    ]);
+    if (movies.results.length === 0 && shows.results.length === 0) break;
+
+    // Interleave so the deck alternates movie + tv visually.
+    const max = Math.max(movies.results.length, shows.results.length);
+    for (let i = 0; i < max; i++) {
+      if (movies.results[i]) {
+        // Use the mapper to align shape with what gatherCandidates returns.
+        const m = mapMovie({ ...movies.results[i], media_type: 'movie' });
+        push(m, 'movie');
+      }
+      if (shows.results[i]) {
+        const t = mapTv({ ...shows.results[i], media_type: 'tv' });
+        push(t, 'tv');
+      }
     }
   }
   return out;

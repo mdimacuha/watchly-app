@@ -12,9 +12,11 @@ interface CollectionCardProps {
     backdropPath: string | null;
   } | null;
   className?: string;
+  /** e.g. close the Quick View popup when navigating from it. */
+  onClick?: () => void;
 }
 
-export function CollectionCard({ collection, className }: CollectionCardProps) {
+export function CollectionCard({ collection, className, onClick }: CollectionCardProps) {
   if (!collection) return null;
 
   const imageUrl = buildImageUrl(collection.posterPath, "w200");
@@ -23,6 +25,7 @@ export function CollectionCard({ collection, className }: CollectionCardProps) {
   return (
     <Link
       href={`/collection/${collection.id}`}
+      onClick={onClick}
       className={cn(
         "group relative flex items-center gap-4 overflow-hidden rounded-lg bg-muted/20 border border-white/5 hover:border-white/20 hover:bg-muted/40 transition-all p-3 w-full max-w-md",
         className

@@ -4,7 +4,7 @@ import React from "react";
 import { cn } from "@/lib/cn";
 import { FeedItem, ReleaseRow } from "@/services/tmdb/title";
 import Image from "next/image";
-import Link from "next/link";
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { buildImageUrl } from "@/lib/tmdb";
 import { ArrowRight } from "lucide-react";
 
@@ -28,7 +28,7 @@ export function TitleFeedSection({ items }: TitleFeedSectionProps) {
           const imageUrl = buildImageUrl(item.imagePath, "w500");
           
           return (
-            <Link 
+            <QuickViewLink 
               key={i} 
               href={item.href}
               className="group flex flex-col gap-3 rounded-lg hover:bg-muted/5 transition-all p-2 -mx-2"
@@ -67,7 +67,7 @@ export function TitleFeedSection({ items }: TitleFeedSectionProps) {
                   {item.ctaLabel} <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
-            </Link>
+            </QuickViewLink>
           );
         })}
       </div>

@@ -64,6 +64,8 @@ function Pill({
       variant={active ? "default" : "secondary"}
       size="sm"
       onClick={onClick}
+      // Expose which type is selected to assistive tech.
+      aria-pressed={active}
       className={cn(
         "rounded-full px-4 h-8 text-xs font-medium transition-colors",
         active

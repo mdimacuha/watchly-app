@@ -6,7 +6,7 @@ import { buildImageUrl } from '@/lib/tmdb';
 import { PersonPagePayload } from '@/services/tmdb/person';
 import { PosterCard } from '@/components/watchly/PosterCard';
 import { TitleTabs } from '@/components/title/TitleTabs';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FavoriteButton } from '@/components/watchly/FavoriteButton';
 import { BackLink } from '@/components/nav/BackLink';
@@ -145,8 +145,9 @@ export function ArtistClient({ payload }: ArtistClientProps) {
               key={`${credit.mediaType}-${credit.id}-${credit.job || credit.character}`}
               className="flex flex-col gap-2"
             >
-              <Link
-                href={`/title/${credit.mediaType}/${credit.id}`}
+              <QuickViewLink
+                mediaType={credit.mediaType}
+                titleId={credit.id}
                 className="group"
               >
                 <PosterCard
@@ -164,7 +165,7 @@ export function ArtistClient({ payload }: ArtistClientProps) {
                   className="w-full max-w-none"
                   availability={credit.availability}
                 />
-              </Link>
+              </QuickViewLink>
               {/* Role/Job Display */}
               <div className="text-xs text-muted-foreground px-1">
                 {activeTab === 'cast' ? (

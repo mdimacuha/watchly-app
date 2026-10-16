@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/cn';
 import { X } from 'lucide-react';
 
@@ -16,6 +17,8 @@ interface ModalProps {
    * not overlap the content.
    */
   hideCloseButton?: boolean;
+  /** Extra classes for the scrolling body (e.g. `no-scrollbar`). */
+  bodyClassName?: string;
 }
 
 export function Modal({
@@ -25,6 +28,7 @@ export function Modal({
   children,
   className,
   hideCloseButton = false,
+  bodyClassName,
 }: ModalProps) {
   useEffect(() => {
     if (isOpen) {
@@ -43,9 +47,14 @@ export function Modal({
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+  // Modals only open after a client interaction, so document exists here.
+  if (typeof document === 'undefined') return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+  // Portaled to <body>: a transformed ancestor (e.g. a 3D-tilt card) turns
+  // `position: fixed` into "relative to that ancestor", which clipped and
+  // mispositioned modals opened from inside it.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
@@ -56,7 +65,10 @@ export function Modal({
       {/* Panel */}
       <div
         className={cn(
-          'relative w-full max-w-4xl bg-background rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]',
+          // min-w-0: as a flex item the panel would otherwise grow to its content's
+          // min-content width (nowrap button rows, provider strips) and run off
+          // the right edge of small screens.
+          'relative w-full min-w-0 max-w-4xl bg-background rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]',
           className
         )}
         role="dialog"
@@ -72,8 +84,9 @@ export function Modal({
             <X className="w-5 h-5" />
           </button>
         )}
-        <div className="flex-1 overflow-auto p-0">{children}</div>
+        <div className={cn('min-w-0 flex-1 overflow-auto overflow-x-hidden p-0', bodyClassName)}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

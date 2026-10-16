@@ -1,14 +1,16 @@
 import 'server-only';
 
 import { db } from '@/db';
-import { titleSwipes } from '@/db/schema';
+import { titleSwipeEvents, titleSwipes } from '@/db/schema';
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import { addFavorite, removeFavorite } from '@/services/favorites';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapWithConcurrency } from '@/lib/concurrency';
+import { logger } from '@/lib/log';
 import type { SwipeAction, SwipeSource, TitleType } from './constants';
 
 export type { SwipeAction, SwipeSource, TitleType } from './constants';
+export { DECIDED_SWIPE_ACTIONS } from './constants';
 
 // Re-export the deck recommendation entry-point so callers can use one
 // import (`@/services/swipe`) for both record + read paths.
@@ -90,6 +92,16 @@ export async function recordSwipe(
     // swipe id is always available for the single-step undo handle.
     .returning({ id: titleSwipes.id });
 
+  await logSwipeEvent({
+    userId: input.userId,
+    titleId,
+    titleType,
+    event: input.action,
+    source: input.source,
+    scoreSnapshot: input.scoreSnapshot,
+    metadata: input.metadata,
+  });
+
   let favoriteAdded = false;
   if (input.action === 'saved') {
     const row = await addFavorite(input.userId, titleId, titleType);
@@ -126,9 +138,17 @@ export async function deleteSwipe(
   const deleted = await db
     .delete(titleSwipes)
     .where(and(eq(titleSwipes.id, swipeId), eq(titleSwipes.userId, userId)))
-    .returning({ id: titleSwipes.id });
+    .returning({ id: titleSwipes.id, titleId: titleSwipes.titleId, titleType: titleSwipes.titleType });
 
   const removed = deleted.length > 0;
+  if (removed) {
+    await logSwipeEvent({
+      userId,
+      titleId: deleted[0].titleId,
+      titleType: deleted[0].titleType,
+      event: 'undo',
+    });
+  }
   if (removed && opts?.reverseFavorite) {
     await removeFavorite(
       userId,
@@ -202,7 +222,10 @@ export async function getSwipeSignals(
       action: titleSwipes.action,
     })
     .from(titleSwipes)
-    .where(eq(titleSwipes.userId, userId));
+    .where(eq(titleSwipes.userId, userId))
+    // Newest first: callers slice "recent" passes and pick like-seeds
+    // from the front of each list.
+    .orderBy(desc(titleSwipes.updatedAt));
 
   const grouped: Record<SwipeAction, SwipeKey[]> = {
     liked: [],
@@ -265,7 +288,10 @@ export async function getSwipeHistory(
 
   const conditions = [eq(titleSwipes.userId, userId)];
   if (opts.action) conditions.push(eq(titleSwipes.action, opts.action));
-  if (opts.before) conditions.push(lt(titleSwipes.createdAt, opts.before));
+  // Ordered + paged by the LATEST decision (updatedAt), so a title whose
+  // verdict changed (re-swiped, or changed from History) moves to the top
+  // instead of keeping its first-swipe position.
+  if (opts.before) conditions.push(lt(titleSwipes.updatedAt, opts.before));
 
   const rows = await db
     .select({
@@ -273,11 +299,11 @@ export async function getSwipeHistory(
       titleId: titleSwipes.titleId,
       titleType: titleSwipes.titleType,
       action: titleSwipes.action,
-      createdAt: titleSwipes.createdAt,
+      updatedAt: titleSwipes.updatedAt,
     })
     .from(titleSwipes)
     .where(and(...conditions))
-    .orderBy(desc(titleSwipes.createdAt))
+    .orderBy(desc(titleSwipes.updatedAt))
     .limit(limit);
 
   return mapWithConcurrency(rows, 6, async (r) => {
@@ -308,7 +334,7 @@ export async function getSwipeHistory(
       year,
       posterPath,
       action: r.action as SwipeAction,
-      swipedAt: r.createdAt.toISOString(),
+      swipedAt: r.updatedAt.toISOString(),
     } satisfies SwipeHistoryItem;
   });
 }
@@ -320,4 +346,36 @@ export async function resetSwipeHistory(userId: string): Promise<number> {
     .where(eq(titleSwipes.userId, userId))
     .returning({ id: titleSwipes.id });
   return deleted.length;
+}
+
+// ---------------------------------------------------------------------------
+// Event log (append-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Appends one row to title_swipe_events. Best-effort: analytics must never
+ * fail the user's swipe, so errors are logged and swallowed.
+ */
+async function logSwipeEvent(e: {
+  userId: string;
+  titleId: string;
+  titleType: string;
+  event: SwipeAction | 'undo';
+  source?: SwipeSource;
+  scoreSnapshot?: number;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await db.insert(titleSwipeEvents).values({
+      userId: e.userId,
+      titleId: e.titleId,
+      titleType: e.titleType,
+      event: e.event,
+      source: e.source ?? 'swipe_discovery',
+      scoreSnapshot: e.scoreSnapshot !== undefined ? String(e.scoreSnapshot) : null,
+      metadata: e.metadata ?? null,
+    });
+  } catch (err) {
+    logger.warn('Failed to log swipe event', { event: e.event, err });
+  }
 }

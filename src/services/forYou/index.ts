@@ -114,7 +114,7 @@ interface SeedFeatureUnion {
   directorIds: Set<number>;
 }
 
-function unionSeedFeatures(seeds: Seed[]): SeedFeatureUnion {
+export function unionSeedFeatures(seeds: Seed[]): SeedFeatureUnion {
   const union: SeedFeatureUnion = {
     genreIds: new Set(),
     keywordIds: new Set(),
@@ -319,7 +319,7 @@ const HIGH_RATING_THRESHOLD = 7.5;
  * over the spec's "+5 if any" reading — feels closer to "how similar is
  * this to my taste."
  */
-function scoreCandidate(
+export function scoreCandidate(
   ec: EnrichedCandidate,
   seedF: SeedFeatureUnion,
   trendingSet: Set<string>,
@@ -353,7 +353,7 @@ function scoreCandidate(
  * the pipeline — most pass-genre fetches will already be warm because
  * the user saw those same titles in the deck before passing.
  */
-async function loadPassedGenreSet(userId: string): Promise<Set<number>> {
+export async function loadPassedGenreSet(userId: string): Promise<Set<number>> {
   const { getSwipeSignals } = await import('@/services/swipe');
   const signals = await getSwipeSignals(userId);
   const recent = signals.passed.slice(0, 12);
@@ -386,7 +386,7 @@ function countOverlap(a: Set<number>, b: Set<number>): number {
  * selected providers — or when no filter is set (selectedProviderSet=null
  * → "any provider in my region", short-circuits to true).
  */
-function matchesProviderFilter(
+export function matchesProviderFilter(
   providers: ForYouProvider[],
   selected: Set<number> | null,
 ): boolean {
@@ -402,7 +402,7 @@ interface TrendingItem {
   mediaType: 'movie' | 'tv' | 'person';
 }
 
-async function loadTrendingTodaySet(): Promise<Set<string>> {
+export async function loadTrendingTodaySet(): Promise<Set<string>> {
   try {
     const r = await trending.all('day');
     const set = new Set<string>();
@@ -624,12 +624,11 @@ export async function loadExcludeSet(userId: string): Promise<Set<string>> {
   const watchedKeys = await getWatchedKeySet(userId);
   for (const key of watchedKeys) set.add(key);
 
-  // Anything the user has swiped on (liked, passed, saved, opened)
-  // shouldn't reappear in the For You feed — once they've explicitly
-  // decided on a title in the swipe UI, the recommendation surface
-  // should respect that decision.
-  const { getSwipeKeySet } = await import('@/services/swipe');
-  const swipeKeys = await getSwipeKeySet(userId);
+  // Titles the user decided on in the swipe UI (liked, passed, saved)
+  // shouldn't reappear in the For You feed. "opened" is only a Quick View
+  // peek, not a decision, so it doesn't hide a title.
+  const { getSwipeKeySet, DECIDED_SWIPE_ACTIONS } = await import('@/services/swipe');
+  const swipeKeys = await getSwipeKeySet(userId, DECIDED_SWIPE_ACTIONS);
   for (const key of swipeKeys) set.add(key);
 
   return set;
@@ -738,7 +737,7 @@ interface TmdbDetailsFull {
 
 /** Candidate-side feature vector — populated from the same fetch that
  *  produces the UI shape, used by the scoring formula. */
-interface CandidateFeatures {
+export interface CandidateFeatures {
   genreIds: Set<number>;
   keywordIds: Set<number>;
   castIds: Set<number>;
@@ -817,10 +816,9 @@ function pickRegionFlatrate(
   block: TmdbWatchProviders | undefined,
   region: string,
 ): ForYouProvider[] {
-  const list =
-    block?.results?.[region]?.flatrate ??
-    block?.results?.['US']?.flatrate ??
-    [];
+  // Region only — a US fallback showed (and scored +3 for) services the
+  // user can't actually stream where they live.
+  const list = block?.results?.[region]?.flatrate ?? [];
   const seen = new Set<string>();
   const out: ForYouProvider[] = [];
   for (const p of list) {

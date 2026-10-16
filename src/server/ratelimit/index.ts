@@ -185,6 +185,21 @@ export const limiters = {
     count: 30,
     label: 'tmdb-search',
   }),
+  // Search analytics beacons — a few per search (performed, opened, …),
+  // batched client-side. Generous, but bounded since guests can write.
+  searchEvents: createLimiter({
+    windowMs: min(1),
+    count: 120,
+    label: 'search-events',
+  }),
+  // Search end-cap ("Picked for you instead") — one For You seed pass +
+  // up to 24 detail fetches, requested once per settled dead-end search.
+  // Own bucket so it never eats into the per-keystroke search budget.
+  searchEndCap: createLimiter({
+    windowMs: min(1),
+    count: 20,
+    label: 'search-end-cap',
+  }),
   // Swipe deck — fans out to TMDB recommendations + similar + enrich
   // per candidate, so cap it the same way as the search bucket.
   swipeDeck: createLimiter({

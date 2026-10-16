@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { getCollectionDetails } from '@/services/tmdb/collection';
 import Image from 'next/image';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { buildImageUrl } from '@/lib/tmdb';
 import { notFound } from 'next/navigation';
 import { PosterCard } from '@/components/watchly/PosterCard';
@@ -121,7 +121,7 @@ export default async function CollectionPage({
         <h2 className="text-xl font-bold mb-6">Collection Parts</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {collection.parts.map(part => (
-            <Link key={part.id} href={`/title/movie/${part.id}`}>
+            <QuickViewLink key={part.id} mediaType="movie" titleId={part.id}>
               <PosterCard
                 title={part.title}
                 year={part.releaseDate ? part.releaseDate.split('-')[0] : ''}
@@ -131,7 +131,7 @@ export default async function CollectionPage({
                 mediaType="movie"
                 availability={part.providerBadges}
               />
-            </Link>
+            </QuickViewLink>
           ))}
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import Link from "next/link";
+import { QuickViewLink } from "@/components/watchly/QuickViewLink";
 import Image from "next/image";
 import { buildImageUrl } from "@/lib/tmdb";
 import { cn } from "@/lib/cn";
@@ -14,8 +14,9 @@ export function CastCard({ cast, className }: CastCardProps) {
   const profileUrl = buildImageUrl(cast.profilePath, "w185");
 
   return (
-    <Link 
-      href={`/artist/${cast.id}`}
+    <QuickViewLink
+      mediaType="person"
+      titleId={cast.id}
       className={cn("flex flex-col w-[120px] shrink-0 gap-2 group", className)}
     >
       <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-muted transition-all">
@@ -44,6 +45,6 @@ export function CastCard({ cast, className }: CastCardProps) {
           {cast.character}
         </span>
       </div>
-    </Link>
+    </QuickViewLink>
   );
 }

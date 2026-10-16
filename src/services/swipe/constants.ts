@@ -1,6 +1,12 @@
 export const SWIPE_ACTIONS = ['liked', 'passed', 'saved', 'opened'] as const;
 export type SwipeAction = (typeof SWIPE_ACTIONS)[number];
 
+/**
+ * Actions that are an actual verdict on a title. These hide it from the deck
+ * and For You; "opened" (a Quick View peek) does not.
+ */
+export const DECIDED_SWIPE_ACTIONS: SwipeAction[] = ['liked', 'passed', 'saved'];
+
 export const SWIPE_SOURCES = [
   'swipe_discovery',
   'onboarding',

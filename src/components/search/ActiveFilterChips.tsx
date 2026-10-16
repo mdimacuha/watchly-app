@@ -3,7 +3,8 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { SEARCH_GENRES, SEARCH_SERVICES } from "./FilterDropdowns";
+import { SEARCH_GENRES } from "./FilterDropdowns";
+import { serviceName, useSearchServices } from "./useSearchServices";
 
 interface ActiveFilterChipsProps {
   className?: string;
@@ -28,6 +29,7 @@ export function ActiveFilterChips({ className }: ActiveFilterChipsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const services = useSearchServices();
 
   const type = searchParams.get("type");
   const genre = searchParams.get("genre");
@@ -50,7 +52,7 @@ export function ActiveFilterChips({ className }: ActiveFilterChipsProps) {
     chips.push({
       key: "service",
       label: "Service",
-      value: SEARCH_SERVICES.find((s) => s.id === service)?.name ?? service,
+      value: serviceName(services, service),
     });
   }
   if (year) {

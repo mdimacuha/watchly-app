@@ -34,8 +34,13 @@ export function SearchResultsGrid({
   const query = searchParams.get('q');
 
   const title = query ? 'Search Results' : `Popular in ${regionName}`;
+  // TMDB's total is an estimate for text searches (it counts people and
+  // other types we don't show), so present it as approximate.
   const totalResults =
-    query && data ? `${data.total_results.toLocaleString()} results found` : '';
+    query && data
+      ? `${data.total_pages <= 1 ? "" : "About "}${data.total_results.toLocaleString()} ${data.total_results === 1 ? "title" : "titles"}`
+      : "";
+  const hasFilters = ['type', 'genre', 'year', 'service'].some((k) => searchParams.get(k));
 
   const hasResults = !!data && data.results.length > 0;
 
@@ -86,9 +91,15 @@ export function SearchResultsGrid({
           className,
         )}
       >
-        <p>
-          {query ? `No results found for “${query}”` : 'No results found'}
+        <p className="text-foreground font-medium" role="status">
+          {query ? `No titles found for “${query}”` : 'No results found'}
         </p>
+        {/* Give a way forward instead of a dead end. */}
+        <ul className="mt-2 space-y-1 text-sm">
+          {hasFilters && <li>Try removing a filter — they narrow results a lot.</li>}
+          {query && <li>Check the spelling, or try fewer words.</li>}
+          {query && <li>Searching for a person or theme? Try their full name or a genre.</li>}
+        </ul>
       </div>
     );
   }
@@ -97,8 +108,18 @@ export function SearchResultsGrid({
     <div className={cn('space-y-6', className)}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-        <span className="text-sm text-muted-foreground">{totalResults}</span>
+        {/* Announced when a search settles. */}
+        <span className="text-sm text-muted-foreground" aria-live="polite">
+          {totalResults}
+        </span>
       </div>
+
+      {data.filteredWithinPage && (
+        <p className="text-xs text-muted-foreground">
+          Filters are applied to each page of matches for “{query}”, so some
+          pages show fewer titles.
+        </p>
+      )}
 
       {/* Refetching: dim the current results instead of blanking them. */}
       <div

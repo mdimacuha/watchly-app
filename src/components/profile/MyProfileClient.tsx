@@ -383,7 +383,7 @@ export function MyProfileClient({ overview: initialOverview }: MyProfileClientPr
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {recentWatchlists.map((w) => (
-                <WatchlistCard key={w.id} watchlist={w} />
+                <WatchlistCard key={w.id} watchlist={w} quickLook />
               ))}
             </div>
           )}
@@ -581,6 +581,7 @@ export function MyProfileClient({ overview: initialOverview }: MyProfileClientPr
           accentColor: profile.accentColor,
           firstName: profile.firstName,
           lastName: profile.lastName,
+          username: profile.username,
         }}
         onSubmit={handleSubmit}
       />
@@ -648,7 +649,7 @@ function OverviewSections({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
             {recentWatchlists.map((w) => (
-              <WatchlistCard key={w.id} watchlist={w} />
+              <WatchlistCard key={w.id} watchlist={w} quickLook />
             ))}
           </div>
         )}

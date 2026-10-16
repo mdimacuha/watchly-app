@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -15,7 +15,7 @@ interface NotificationRowProps {
  */
 export function NotificationRow({ item }: NotificationRowProps) {
   return (
-    <Link
+    <QuickViewLink
       href={item.href}
       className={cn(
         'flex items-start gap-3 px-2 py-3 -mx-2 rounded-md hover:bg-foreground/5 transition-colors',
@@ -53,7 +53,7 @@ export function NotificationRow({ item }: NotificationRowProps) {
           />
         </div>
       )}
-    </Link>
+    </QuickViewLink>
   );
 }
 

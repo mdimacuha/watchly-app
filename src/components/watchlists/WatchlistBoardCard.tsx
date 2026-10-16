@@ -2,7 +2,7 @@
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
@@ -14,15 +14,10 @@ interface WatchlistBoardCardProps {
   isOwner: boolean;
 }
 
-const TYPE_LINKS: Record<EnrichedWatchlistItem['type'], string> = {
-  movie: '/title/movie',
-  tv: '/title/tv',
-};
-
 /**
  * Compact card used inside board columns. No status chip (status = column),
  * no hover-overlay actions (board view is for triaging status, not for
- * remove / like). Clicking the card body navigates to the title page;
+ * remove / like). Clicking the card body opens Quick View;
  * dragging changes the column it lives in (i.e. status).
  */
 export function WatchlistBoardCard({ item, isOwner }: WatchlistBoardCardProps) {
@@ -31,7 +26,6 @@ export function WatchlistBoardCard({ item, isOwner }: WatchlistBoardCardProps) {
     item.type === 'movie' ? item.data.releaseDate : item.data.firstAirDate;
   const year = formatYear(date);
   const imageUrl = buildImageUrl(item.data.posterPath, 'w342');
-  const href = `${TYPE_LINKS[item.type]}/${item.data.id}`;
 
   // Sortable is owner-only — non-owners just see a static card.
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -57,8 +51,9 @@ export function WatchlistBoardCard({ item, isOwner }: WatchlistBoardCardProps) {
       )}
       {...(isOwner ? { ...attributes, ...listeners } : {})}
     >
-      <Link
-        href={href}
+      <QuickViewLink
+        mediaType={item.type}
+        titleId={item.data.id}
         // No stopPropagation: dnd-kit's PointerSensor uses an
         // `activationConstraint: { distance: 4 }`, so a pure click (no
         // movement) goes through to the Link, and a movement past 4px starts
@@ -96,7 +91,7 @@ export function WatchlistBoardCard({ item, isOwner }: WatchlistBoardCardProps) {
             </p>
           )}
         </div>
-      </Link>
+      </QuickViewLink>
     </div>
   );
 }

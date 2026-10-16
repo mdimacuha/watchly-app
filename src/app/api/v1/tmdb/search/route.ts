@@ -6,6 +6,9 @@ import { logger } from '@/lib/log';
 import { limiters } from '@/server/ratelimit';
 import { tooManyResponse } from '@/server/ratelimit/response';
 import { getClientIp } from '@/server/net/clientIp';
+import { z } from 'zod';
+
+const searchTypeSchema = z.enum(['all', 'movie', 'tv']);
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +27,8 @@ export async function GET(request: NextRequest) {
 
     const params = {
       q: searchParams.get('q') || undefined,
-      type: (searchParams.get('type') as 'all' | 'movie' | 'tv') || 'all',
+      // Validated, not cast: unknown values fall back to 'all'.
+      type: searchTypeSchema.catch('all').parse(searchParams.get('type') ?? 'all'),
       year: searchParams.get('year') || undefined,
       genre: searchParams.get('genre') || undefined,
       service: searchParams.get('service') || undefined,

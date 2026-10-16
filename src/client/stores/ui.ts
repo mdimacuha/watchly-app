@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 
+/** Titles, or a person (cast/crew) — 'person' opens the people preview. */
+export type QuickViewType = 'movie' | 'tv' | 'person' | 'watchlist';
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -14,7 +17,7 @@ interface UIState {
    * a lightweight title popup via `openQuickView`; a single global
    * `QuickViewModal` (mounted in AuthenticatedShell) reads this slice.
    */
-  quickView: { mediaType: 'movie' | 'tv'; id: string } | null;
+  quickView: { mediaType: QuickViewType; id: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -27,7 +30,7 @@ interface UIActions {
   collapseSidebar: () => void;
   openMobileOverlay: () => void;
   closeMobileOverlay: () => void;
-  openQuickView: (mediaType: 'movie' | 'tv', id: string) => void;
+  openQuickView: (mediaType: QuickViewType, id: string) => void;
   closeQuickView: () => void;
 }
 

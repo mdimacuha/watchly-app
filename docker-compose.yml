@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:17
+    container_name: watchly-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: watchly
+      POSTGRES_PASSWORD: watchly
+      POSTGRES_DB: watchly
+    ports:
+      - "5432:5432"
+    volumes:
+      - watchly-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watchly -d watchly"]
+      interval: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: watchly-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP: the app sends here
+      - "8025:8025"   # web inbox: open in your browser
+
+volumes:
+  watchly-pgdata:

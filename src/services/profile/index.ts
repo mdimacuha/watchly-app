@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CARD_FEATURE,
+  isCardFeatureLabel,
+  isCardFeatureMode,
+  type CardFeatureSetting,
+} from '@/constants/cardFeature';
 import { db } from '@/db';
 import {
   users,
@@ -72,6 +78,11 @@ export interface TasteProfile {
   decades: string[];
   /** Top streaming providers (flatrate) the user's favorites are available on. */
   providers: string[];
+  /** Genres with how many sampled titles carry them — for weighted "Taste DNA" bars. */
+  genreWeights?: { name: string; count: number }[];
+  decadeWeights?: { name: string; count: number }[];
+  /** How many titles the profile was computed from. */
+  sampleSize?: number;
 }
 
 export interface ProfileOverview {
@@ -104,6 +115,8 @@ export type ProfileView = {
   accentColor: AccentSlug | null;
   /** When true (default), profile pages render a poster-collage banner. */
   bannerEnabled: boolean;
+  /** The card's highlight slot setting (validated). */
+  cardFeature: CardFeatureSetting;
   /** Owner's choice to hide their watched list from the public profile.
    *  Defaults to true (watched data is more intimate than favorites). */
   hideWatched: boolean;
@@ -129,7 +142,7 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
     throw new ValidationAppError('Invalid profile input', parsed.error.flatten());
   }
 
-  const { displayName, bio, avatarUrl, accentColor } = parsed.data;
+  const { displayName, bio, avatarUrl, accentColor, cardFeature } = parsed.data;
 
   // Moderate public-facing text. Display name is required + bounded;
   // bio is optional + longer. Generic external message on slur /
@@ -172,6 +185,22 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
     }
   }
 
+  // A custom card highlight must be one of the user's own favorites.
+  if (cardFeature?.mode === 'custom') {
+    const [fav] = await db
+      .select({ id: userFavorites.id })
+      .from(userFavorites)
+      .where(
+        and(
+          eq(userFavorites.userId, userId),
+          eq(userFavorites.favoriteType, cardFeature.mediaType!),
+          eq(userFavorites.favoriteId, cardFeature.mediaId!),
+        ),
+      )
+      .limit(1);
+    if (!fav) throw new ValidationAppError('That title is not in your favorites.');
+  }
+
   const normalizedAvatar = avatarUrl ?? '';
   // accentColor: `undefined` = caller didn't include it (leave existing value).
   // `null` = caller is clearing it back to default. Otherwise = new slug.
@@ -185,6 +214,13 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
         bio: bio ?? '',
         avatarUrl: normalizedAvatar,
         ...(includeAccent && { accentColor }),
+        // undefined = caller didn't touch the card highlight.
+        ...(cardFeature && {
+          cardFeatureMode: cardFeature.mode === 'now_showing' ? null : cardFeature.mode,
+          cardFeatureMediaType: cardFeature.mode === 'custom' ? cardFeature.mediaType : null,
+          cardFeatureMediaId: cardFeature.mode === 'custom' ? cardFeature.mediaId : null,
+          cardFeatureLabel: cardFeature.mode === 'custom' ? cardFeature.label : null,
+        }),
         updatedAt: new Date(),
       })
       .where(eq(userProfiles.userId, userId))
@@ -243,6 +279,7 @@ export async function getProfileWithStats(userId: string): Promise<ProfileView> 
     // (see schema comment) so we can't trust the value blindly.
     accentColor: isAccentSlug(profileRow?.accentColor) ? profileRow!.accentColor : null,
     bannerEnabled: profileRow?.bannerEnabled ?? true,
+    cardFeature: readCardFeature(profileRow),
     hideWatched: prefsRow?.hideWatched ?? true,
     stats: {
       favoritesCount: favCount,
@@ -330,15 +367,29 @@ interface WatchProvidersBlock {
  */
 export async function getTasteProfile(
   userId: string,
-  options: { region?: string } = {},
+  options: {
+    region?: string;
+    /**
+     * Which private signals may feed the result. Defaults to all (the
+     * owner's own view). Public views must pass the owner's privacy
+     * choices — a taste profile built from hidden favorites/watched (or
+     * swipes, which are never public) leaks them.
+     */
+    sources?: { favorites: boolean; watched: boolean; swipes: boolean };
+  } = {},
 ): Promise<TasteProfile> {
   const region = options.region ?? 'US';
+  const sources = options.sources ?? { favorites: true, watched: true, swipes: true };
 
   // Sample sources in parallel — all three are bounded reads.
   const [favorites, watchedEntries, swipeSignals] = await Promise.all([
-    getFavorites(userId, { limit: TASTE_SAMPLE_LIMIT }),
-    import('@/services/watched').then((m) => m.getWatchedEntries(userId)),
-    import('@/services/swipe').then((m) => m.getSwipeSignals(userId)),
+    sources.favorites ? getFavorites(userId, { limit: TASTE_SAMPLE_LIMIT }) : Promise.resolve([]),
+    sources.watched
+      ? import('@/services/watched').then((m) => m.getWatchedEntries(userId))
+      : Promise.resolve([]),
+    sources.swipes
+      ? import('@/services/swipe').then((m) => m.getSwipeSignals(userId))
+      : Promise.resolve({ liked: [], saved: [], passed: [], opened: [] }),
   ]);
 
   // Inputs = favorites ∪ watched ∪ saved-swipes ∪ liked-swipes. Order
@@ -443,7 +494,18 @@ export async function getTasteProfile(
     genres: topByCount(genreCounts, TOP_GENRES),
     decades: topByCount(decadeCounts, TOP_DECADES),
     providers: topByCount(providerSource, TOP_PROVIDERS),
+    genreWeights: weighted(genreCounts, 6),
+    decadeWeights: weighted(decadeCounts, 6),
+    sampleSize: inputs.length,
   };
+}
+
+/** Top entries with their counts, most frequent first. */
+function weighted(counts: Map<string, number>, limit: number): { name: string; count: number }[] {
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name, count]) => ({ name, count }));
 }
 
 /**
@@ -466,10 +528,23 @@ export async function getPublicProfileByUsername(
   const visibility = prefsRow?.profileVisibility ?? 'public';
   const isSelf = viewerId === userRow.id;
 
-  // `followers_only` is treated as private until the social feature lands
-  // (no follow-graph reads available yet).
-  if (!isSelf && visibility !== 'public') {
-    throw new ForbiddenAppError('This profile is private');
+  if (!isSelf) {
+    const social = await import('@/services/social');
+    // Blocked either way → the profile doesn't exist for this viewer.
+    if (viewerId && (await social.isEitherBlocked(viewerId, userRow.id))) {
+      throw new NotFoundAppError('User not found');
+    }
+    if (visibility === 'private') {
+      throw new ForbiddenAppError('This profile is private');
+    }
+    // followers_only: accepted followers may read (the follow graph exists
+    // now; this used to be treated as fully private).
+    if (visibility === 'followers_only') {
+      const state = await social.getFollowState(viewerId, userRow.id);
+      if (state.status !== 'accepted') {
+        throw new ForbiddenAppError('This profile is only visible to followers');
+      }
+    }
   }
 
   return getProfileWithStats(userRow.id);
@@ -518,6 +593,9 @@ export async function getPublicProfileOverview(
   const ownerHidesWatched = prefsRow?.hideWatched ?? true;
   const showFavoritesToViewer = isSelf || !ownerHidesFavorites;
   const showWatchedToViewer = isSelf || !ownerHidesWatched;
+  // watchlistsVisibility (Settings → Privacy) — previously saved but never
+  // enforced. followers_only needs an accepted follow (checked below).
+  const watchlistsVisibility = prefsRow?.watchlistsVisibility ?? 'public';
 
   // Public taste profile is scoped to the *owner's* region (matching the
   // accent-visibility decision — pages adopt the owner's context, not the
@@ -532,11 +610,20 @@ export async function getPublicProfileOverview(
     mutualFollowers,
     watchedTitles,
   ] = await Promise.all([
-    listPublicWatchlists(profile.userId),
+    isSelf || watchlistsVisibility !== 'private'
+      ? listPublicWatchlists(profile.userId)
+      : Promise.resolve([] as Awaited<ReturnType<typeof listPublicWatchlists>>),
     showFavoritesToViewer
       ? getFavorites(profile.userId, { limit: RECENT_FAVORITES_LIMIT })
       : Promise.resolve([] as Awaited<ReturnType<typeof getFavorites>>),
-    getTasteProfile(profile.userId, { region: profile.region }),
+    // Only from what this viewer may see: hidden favorites/watched (and
+    // swipes, never public) must not shape the public taste profile.
+    getTasteProfile(profile.userId, {
+      region: profile.region,
+      sources: isSelf
+        ? undefined
+        : { favorites: showFavoritesToViewer, watched: showWatchedToViewer, swipes: false },
+    }),
     // Social calls — dynamic import to keep this file's static graph small.
     import('@/services/social').then((m) =>
       m.getFollowState(viewerId, profile.userId),
@@ -559,15 +646,36 @@ export async function getPublicProfileOverview(
   ]);
   const recentFavorites = await enrichFavorites(rawFavorites);
 
-  const bannerPosters = profile.bannerEnabled
-    ? await import('@/services/profile/banner').then((m) =>
-        m.getBannerPosters(profile.userId),
-      )
-    : [];
+  // Banner is built from favorites — so it's hidden whenever they are.
+  const bannerPosters =
+    profile.bannerEnabled && showFavoritesToViewer
+      ? await import('@/services/profile/banner').then((m) =>
+          m.getBannerPosters(profile.userId),
+        )
+      : [];
+
+  // followers_only watchlists: only accepted followers (and the owner).
+  const visibleWatchlists =
+    isSelf || watchlistsVisibility === 'public' || followState.status === 'accepted'
+      ? publicWatchlists
+      : [];
+
+  // Counts must not reveal what the viewer can't see: no private-list or
+  // hidden-favorites/watched totals for visitors.
+  const visibleProfile: ProfileView = isSelf
+    ? profile
+    : {
+        ...profile,
+        stats: {
+          favoritesCount: showFavoritesToViewer ? profile.stats.favoritesCount : 0,
+          watchlistsCount: visibleWatchlists.length,
+          watchedCount: showWatchedToViewer ? profile.stats.watchedCount : 0,
+        },
+      };
 
   return {
-    profile,
-    publicWatchlists,
+    profile: visibleProfile,
+    publicWatchlists: visibleWatchlists,
     recentFavorites,
     favoritesHidden: ownerHidesFavorites && !isSelf,
     watchedHidden: ownerHidesWatched && !isSelf,
@@ -579,4 +687,15 @@ export async function getPublicProfileOverview(
     mutualFollowers,
     bannerPosters,
   };
+}
+
+/** Card highlight from the DB row, validated (unknown values → default). */
+function readCardFeature(
+  row: { cardFeatureMode: string | null; cardFeatureMediaType: string | null; cardFeatureMediaId: string | null; cardFeatureLabel: string | null } | null | undefined,
+): CardFeatureSetting {
+  if (!row || !isCardFeatureMode(row.cardFeatureMode)) return DEFAULT_CARD_FEATURE;
+  if (row.cardFeatureMode !== 'custom') return { ...DEFAULT_CARD_FEATURE, mode: row.cardFeatureMode };
+  const mediaType = row.cardFeatureMediaType === 'movie' || row.cardFeatureMediaType === 'tv' ? row.cardFeatureMediaType : null;
+  if (!mediaType || !row.cardFeatureMediaId || !isCardFeatureLabel(row.cardFeatureLabel)) return DEFAULT_CARD_FEATURE;
+  return { mode: 'custom', mediaType, mediaId: row.cardFeatureMediaId, label: row.cardFeatureLabel };
 }

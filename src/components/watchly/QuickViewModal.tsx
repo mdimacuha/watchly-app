@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { X, Play, EyeOff } from 'lucide-react';
+import Link from 'next/link';
+import { X, Play, EyeOff, ArrowUpRight } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/client/stores/ui';
@@ -14,6 +15,10 @@ import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButt
 import { ProviderSection } from '@/components/title/ProviderSection';
 import { ErrorState } from '@/components/watchly/ErrorState';
 import { SkeletonBox } from '@/components/watchly/skeletons';
+import { PersonQuickViewContent } from '@/components/watchly/PersonQuickView';
+import { WatchlistQuickViewContent } from '@/components/watchly/WatchlistQuickView';
+import { QuickViewSeasons } from '@/components/watchly/QuickViewSeasons';
+import { CollectionCard } from '@/components/title/CollectionCard';
 import type { TitlePagePayload } from '@/services/tmdb/title';
 
 // ---------------------------------------------------------------------------
@@ -34,23 +39,59 @@ export function QuickViewModal() {
       // We render our own close control so it sits legibly over the backdrop /
       // inline trailer instead of Modal's default X overlapping the video.
       hideCloseButton
-      className="max-w-2xl bg-background"
+      // Fixed cap (~a movie's popup without extras) so the popup keeps one
+      // size; longer content (seasons, collection) scrolls inside it.
+      className="max-w-2xl max-h-[min(90dvh,53rem)] bg-background"
+      // Still scrolls (wheel / touch / keyboard), just without the bar.
+      bodyClassName="no-scrollbar"
     >
-      {quickView && (
-        // Key by title so all local state (data, loading, trailer toggle)
-        // resets cleanly when a different card opens the popup.
+      {/* Key by target so all local state (data, loading, trailer toggle)
+          resets cleanly when a different card — or a role inside a person
+          preview — opens the popup. */}
+      {quickView?.mediaType === 'person' ? (
+        <PersonQuickViewContent
+          key={`person:${quickView.id}`}
+          id={quickView.id}
+          onClose={closeQuickView}
+          closeButton={<QuickViewCloseButton onClose={closeQuickView} />}
+        />
+      ) : quickView?.mediaType === 'watchlist' ? (
+        <WatchlistQuickViewContent
+          key={`watchlist:${quickView.id}`}
+          id={quickView.id}
+          onClose={closeQuickView}
+          closeButton={<QuickViewCloseButton onClose={closeQuickView} />}
+        />
+      ) : quickView ? (
         <QuickViewContent
           key={`${quickView.mediaType}:${quickView.id}`}
           mediaType={quickView.mediaType}
           id={quickView.id}
           onClose={closeQuickView}
         />
-      )}
+      ) : null}
     </Modal>
   );
 }
 
 // ---------------------------------------------------------------------------
+
+function QuickViewCloseButton({ onClose }: { onClose: () => void }) {
+  // Zero-height sticky rail: the button stays pinned to the top-right while
+  // the popup content scrolls underneath, without taking up layout space.
+  return (
+    <div className="sticky top-0 z-30 h-0">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-3 right-3 z-30 p-2 rounded-full bg-black/50 text-white/90 hover:bg-black/70 hover:text-white transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        aria-label="Close quick view"
+      >
+        <X className="w-5 h-5" />
+      </button>
+    </div>
+  );
+}
 
 interface QuickViewContentProps {
   mediaType: 'movie' | 'tv';
@@ -95,16 +136,7 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
     return () => controller.abort();
   }, [mediaType, id, nonce]);
 
-  const CloseButton = (
-    <button
-      type="button"
-      onClick={onClose}
-      className="absolute top-3 right-3 z-30 p-2 rounded-full bg-black/50 text-white/90 hover:bg-black/70 hover:text-white transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      aria-label="Close quick view"
-    >
-      <X className="w-5 h-5" />
-    </button>
-  );
+  const CloseButton = <QuickViewCloseButton onClose={onClose} />;
 
   // ----- Loading -----
   if (loading) {
@@ -163,6 +195,8 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
     justWatchUrl,
     fallbackRegion,
     region,
+    collection,
+    tvSeasons,
   } = data;
   const posterUrl = buildImageUrl(details.posterPath, 'w342');
   const backdropUrl = buildImageUrl(details.backdropPath, 'w780');
@@ -281,6 +315,15 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
               <FavoriteButton id={id} type={mediaType} showText={false} />
             </>
           )}
+
+          {/* The popup is global (store-driven), so close it on navigate or
+              it would stay open over the title page. */}
+          <Button asChild variant="secondary" className="gap-2">
+            <Link href={`/title/${mediaType}/${id}`} onClick={onClose}>
+              <ArrowUpRight className="w-4 h-4" />
+              <span>Go to Page</span>
+            </Link>
+          </Button>
         </div>
 
         {/* Overview */}
@@ -301,6 +344,25 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
               fallbackRegion={fallbackRegion}
             />
           </div>
+        )}
+
+        {/* Movie: the franchise it belongs to. Full width to line up with
+            the provider box above. */}
+        {collection && (
+          <CollectionCard
+            collection={collection}
+            onClick={onClose}
+            className="max-w-none"
+          />
+        )}
+
+        {/* TV: seasons with episode counts + estimated run times. */}
+        {tvSeasons && (
+          <QuickViewSeasons
+            tvSeasons={tvSeasons}
+            episodeRuntime={details.runtimeMinutes}
+            onNavigate={onClose}
+          />
         )}
       </div>
     </div>

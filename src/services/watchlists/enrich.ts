@@ -25,6 +25,8 @@ type CommonFields = {
   startedAt: string | null;
   /** ISO when the user set status to finished. */
   finishedAt: string | null;
+  /** ISO when the curator first ranked it; null = "Recently Added". */
+  rankedAt: string | null;
   notes: string | null;
 };
 
@@ -40,6 +42,7 @@ interface RawItem {
   status: WatchlistItemStatus;
   startedAt: Date | null;
   finishedAt: Date | null;
+  rankedAt: Date | null;
   notes: string | null;
 }
 
@@ -171,6 +174,7 @@ export async function enrichWatchlistItems(
           status: it.status,
           startedAt: it.startedAt?.toISOString() ?? null,
           finishedAt: it.finishedAt?.toISOString() ?? null,
+          rankedAt: it.rankedAt?.toISOString() ?? null,
           notes: it.notes,
         };
       }
@@ -204,6 +208,7 @@ export async function enrichWatchlistItems(
         status: it.status,
         startedAt: it.startedAt?.toISOString() ?? null,
         finishedAt: it.finishedAt?.toISOString() ?? null,
+        rankedAt: it.rankedAt?.toISOString() ?? null,
         notes: it.notes,
       };
     } catch {

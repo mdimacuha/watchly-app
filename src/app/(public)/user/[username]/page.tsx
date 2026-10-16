@@ -22,7 +22,8 @@ import { ProfileBanner } from '@/components/profile/ProfileBanner';
 import { VerifiedBadge } from '@/components/profile/VerifiedBadge';
 import { BackLink } from '@/components/nav/BackLink';
 import { isVerifiedAccount } from '@/constants/verifiedAccounts';
-import { getPublicProfileAction } from '@/actions/profile';
+import { getProfileShowcaseAction, getPublicProfileAction } from '@/actions/profile';
+import { ProfilePrototype } from '@/components/profile/ProfilePrototype';
 
 interface PageProps {
   params: Promise<{ username: string }>;
@@ -64,6 +65,25 @@ function formatMemberSince(date: Date | string): string {
 
 export default async function UserProfilePage({ params }: PageProps) {
   const { username } = await params;
+
+  // PROTOTYPE: profile redesign (?variant=a|b|c), dev builds only — the
+  // visitor view, incl. taste match when signed in.
+  if (process.env.NODE_ENV !== 'production') {
+    let showcase;
+    try {
+      showcase = await getProfileShowcaseAction(username);
+    } catch {
+      notFound();
+    }
+    return (
+      <AccentScope
+        accentColor={showcase.overview.profile.accentColor}
+        className="px-4 sm:px-8 py-10 max-w-5xl mx-auto w-full"
+      >
+        <ProfilePrototype showcase={showcase} preview={false} />
+      </AccentScope>
+    );
+  }
 
   let payload;
   try {
@@ -185,13 +205,15 @@ export default async function UserProfilePage({ params }: PageProps) {
               </strong>{' '}
               following
             </Link>
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <Heart className="w-4 h-4 text-primary" />
-              <strong className="text-foreground">
-                {profile.stats.favoritesCount}
-              </strong>{' '}
-              favorites
-            </span>
+            {!favoritesHidden && (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Heart className="w-4 h-4 text-primary" />
+                <strong className="text-foreground">
+                  {profile.stats.favoritesCount}
+                </strong>{' '}
+                favorites
+              </span>
+            )}
             <span className="flex items-center gap-2 text-muted-foreground">
               <Bookmark className="w-4 h-4 text-primary" />
               <strong className="text-foreground">
@@ -265,7 +287,7 @@ export default async function UserProfilePage({ params }: PageProps) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {publicWatchlists.map((w) => (
-            <WatchlistCard key={w.id} watchlist={w} />
+            <WatchlistCard key={w.id} watchlist={w} quickLook />
           ))}
         </div>
       )}

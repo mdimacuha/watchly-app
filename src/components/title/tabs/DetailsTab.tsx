@@ -1,15 +1,25 @@
 import React from "react";
-import { TitleInfoPanelData } from "@/services/tmdb/title";
+import type { CrewPerson, TitleInfoPanelData } from "@/services/tmdb/title";
 import { KeyValueRow } from "@/components/ui/KeyValueRow";
+import { QuickViewLink } from "@/components/watchly/QuickViewLink";
 
 interface DetailsTabProps {
   data: TitleInfoPanelData;
 }
 
 export function DetailsTab({ data }: DetailsTabProps) {
+  const { creators, directors, writers, producers } = data.keyCrew;
+
   return (
     <div className="flex flex-col gap-2 w-full mt-4">
-      <KeyValueRow 
+      {/* Key people first. Rows hide when TMDB has no one for the role
+          (e.g. series-level directors are rare on TV). */}
+      <CrewRow label="Created by" people={creators} />
+      <CrewRow label={directors.length > 1 ? "Directors" : "Director"} people={directors} />
+      <CrewRow label={writers.length > 1 ? "Writers" : "Writer"} people={writers} />
+      <CrewRow label={producers.length > 1 ? "Producers" : "Producer"} people={producers} />
+
+      <KeyValueRow
         label="Production Companies" 
         value={
           <div className="flex flex-wrap gap-2 justify-end">
@@ -68,5 +78,31 @@ export function DetailsTab({ data }: DetailsTabProps) {
         } 
       />
     </div>
+  );
+}
+
+/** Names open the person Quick View, same as cast cards. */
+function CrewRow({ label, people }: { label: string; people: CrewPerson[] }) {
+  if (people.length === 0) return null;
+  return (
+    <KeyValueRow
+      label={label}
+      value={
+        <div className="flex flex-wrap justify-end gap-x-1">
+          {people.map((p, i) => (
+            <span key={p.id}>
+              <QuickViewLink
+                mediaType="person"
+                titleId={p.id}
+                className="hover:text-primary transition-colors"
+              >
+                {p.name}
+              </QuickViewLink>
+              {i < people.length - 1 && ","}
+            </span>
+          ))}
+        </div>
+      }
+    />
   );
 }

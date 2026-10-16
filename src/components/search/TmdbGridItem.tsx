@@ -4,18 +4,20 @@ import { cn } from '@/lib/cn';
 import { SearchResponseItem } from '@/types/tmdb';
 import Image from 'next/image';
 import { buildImageUrl } from '@/lib/tmdb';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
 import { cleanProviderName } from '@/utils/providers';
 
 interface TmdbGridItemProps {
   item: SearchResponseItem;
   className?: string;
+  /** Called when the card is opened (analytics). */
+  onOpen?: () => void;
 }
 
 const MAX_VISIBLE_BADGES = 3;
 
-export function TmdbGridItem({ item, className }: TmdbGridItemProps) {
+export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
   const imageUrl = buildImageUrl(item.posterPath, 'w342');
 
   // Normalize + dedupe so "Amazon Prime Video" and "Amazon Prime Video With
@@ -25,8 +27,10 @@ export function TmdbGridItem({ item, className }: TmdbGridItemProps) {
   const overflow = Math.max(0, cleanedBadges.length - MAX_VISIBLE_BADGES);
 
   return (
-    <Link
-      href={`/title/${item.mediaType}/${item.id}`}
+    <QuickViewLink
+      mediaType={item.mediaType}
+      titleId={item.id}
+      onClick={onOpen}
       className={cn(
         'group relative flex flex-col rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer',
         className,
@@ -42,8 +46,12 @@ export function TmdbGridItem({ item, className }: TmdbGridItemProps) {
             sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 20vw"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground text-xs p-4 text-center">
-            No Poster
+          // Typeset stand-in instead of a bare "No Poster" tile.
+          <div className="flex h-full flex-col justify-end gap-1 bg-secondary p-3">
+            <span className="text-base font-bold leading-tight text-foreground line-clamp-4">
+              {item.title}
+            </span>
+            {item.year && <span className="text-xs text-muted-foreground">{item.year}</span>}
           </div>
         )}
 
@@ -87,10 +95,10 @@ export function TmdbGridItem({ item, className }: TmdbGridItemProps) {
           {item.title}
         </h3>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{item.year || 'Unknown'}</span>
+          {item.year && <span>{item.year}</span>}
         </div>
       </div>
-    </Link>
+    </QuickViewLink>
   );
 }
 

@@ -1,7 +1,7 @@
 import { getCollectionDetails } from "@/services/tmdb/collection";
 import { buildImageUrl } from "@/lib/tmdb";
 import Image from "next/image";
-import Link from "next/link";
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { Badge } from "@/components/ui/badge";
 import { PosterCard } from "@/components/watchly/PosterCard";
 import { ExpandableText } from "@/components/ui/ExpandableText";
@@ -81,7 +81,7 @@ export async function CollectionDetails({ id }: { id: string }) {
         <h2 className="text-2xl font-semibold">Movies in this Collection</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {collection.parts.map((part) => (
-            <Link key={part.id} href={`/title/movie/${part.id}`}>
+            <QuickViewLink key={part.id} mediaType="movie" titleId={part.id}>
               <PosterCard
                 title={part.title}
                 year={part.releaseDate ? new Date(part.releaseDate).getFullYear().toString() : 'TBA'}
@@ -91,7 +91,7 @@ export async function CollectionDetails({ id }: { id: string }) {
                 mediaType="movie"
                 availability={part.providerBadges}
               />
-            </Link>
+            </QuickViewLink>
           ))}
         </div>
       </div>

@@ -8,11 +8,13 @@ interface DiscoverFilters {
   year?: number;
   genre?: number[];
   providers?: number[];
+  /** TMDB keyword ids (OR-ed). Powers "Related to <theme>" search rows. */
+  keywords?: number[];
   sortBy?: string;
 }
 
 export const discover = {
-  movie: ({ page = 1, region, year, genre, providers, sortBy = "popularity.desc" }: DiscoverFilters) => {
+  movie: ({ page = 1, region, year, genre, providers, keywords, sortBy = "popularity.desc" }: DiscoverFilters) => {
     const params: Record<string, string | number | boolean> = {
       page,
       sort_by: sortBy,
@@ -27,6 +29,7 @@ export const discover = {
     
     if (year) params.primary_release_year = year;
     if (genre && genre.length > 0) params.with_genres = genre.join(",");
+    if (keywords && keywords.length > 0) params.with_keywords = keywords.join("|");
     
     if (providers && providers.length > 0) {
       params.with_watch_providers = providers.join("|");
@@ -37,7 +40,7 @@ export const discover = {
       mapPaginatedResponse(r, (item) => mapMovie({ ...item, media_type: "movie" }))
     );
   },
-  tv: ({ page = 1, region, year, genre, providers, sortBy = "popularity.desc" }: DiscoverFilters) => {
+  tv: ({ page = 1, region, year, genre, providers, keywords, sortBy = "popularity.desc" }: DiscoverFilters) => {
     const params: Record<string, string | number | boolean> = {
       page,
       sort_by: sortBy,
@@ -52,6 +55,7 @@ export const discover = {
     
     if (year) params.first_air_date_year = year;
     if (genre && genre.length > 0) params.with_genres = genre.join(",");
+    if (keywords && keywords.length > 0) params.with_keywords = keywords.join("|");
 
     if (providers && providers.length > 0) {
       params.with_watch_providers = providers.join("|");

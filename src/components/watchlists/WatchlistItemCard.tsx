@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { Heart, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -28,11 +28,6 @@ interface WatchlistItemCardProps {
   onNotesChange?: (itemId: string, notes: string | null) => void;
 }
 
-const TYPE_LINKS: Record<EnrichedWatchlistItem['type'], string> = {
-  movie: '/title/movie',
-  tv: '/title/tv',
-};
-
 function getName(item: EnrichedWatchlistItem): string {
   return item.type === 'movie' ? item.data.title : item.data.name;
 }
@@ -55,7 +50,6 @@ export function WatchlistItemCard({
   const name = getName(item);
   const year = getYear(item);
   const runtime = formatRuntime(item.runtime);
-  const href = `${TYPE_LINKS[item.type]}/${item.data.id}`;
   const meta = [year, runtime].filter(Boolean).join('  •  ');
 
   const toast = useToast();
@@ -123,8 +117,9 @@ export function WatchlistItemCard({
     // `group` scopes hover state to the poster Link so the hover overlay
     // (Like / Remove) doesn't fight with the status chip in the footer.
     <div className="relative flex flex-col">
-      <Link
-        href={href}
+      <QuickViewLink
+        mediaType={item.type}
+        titleId={item.data.id}
         className="group relative aspect-2/3 w-full overflow-hidden rounded-lg bg-card shadow-elevation-card transition-transform duration-300 hover:scale-[1.02]"
       >
         {imageUrl ? (
@@ -152,6 +147,13 @@ export function WatchlistItemCard({
               size="sm"
             />
           </div>
+        )}
+
+        {/* Not ranked by the curator yet (see watchlist_items.ranked_at). */}
+        {!item.rankedAt && (
+          <span className="absolute bottom-2 left-2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-elevation-card">
+            Recently Added
+          </span>
         )}
 
         {/* Hover overlay with action buttons */}
@@ -196,7 +198,7 @@ export function WatchlistItemCard({
             </button>
           )}
         </div>
-      </Link>
+      </QuickViewLink>
 
       <div className="flex flex-col gap-1.5 mt-3">
         <h3 className="text-sm font-medium leading-tight truncate text-foreground transition-colors">

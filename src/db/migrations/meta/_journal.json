@@ -183,6 +183,55 @@
       "when": 1783136133560,
       "tag": "0025_free_spacker_dave",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792160405535,
+      "tag": "0026_add_watchlist_item_ranked_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792160412209,
+      "tag": "0027_backfill_watchlist_item_ranked_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792165501377,
+      "tag": "0028_add_title_swipe_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792171479850,
+      "tag": "0029_add_search_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792172991775,
+      "tag": "0030_add_for_you_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792175043998,
+      "tag": "0031_add_profile_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792177343259,
+      "tag": "0032_add_profile_card_feature",
+      "breakpoints": true
     }
   ]
 }

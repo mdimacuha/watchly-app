@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
+import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import Image from 'next/image';
 import { Play, RefreshCw, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,7 +75,6 @@ export function ForYouHero({ initialHero }: ForYouHeroProps) {
   };
 
   const posterUrl = buildImageUrl(hero.posterPath, 'w342');
-  const detailHref = `/title/${hero.mediaType}/${hero.tmdbId}`;
   // CTA copy reads from the media type instead of the streaming provider —
   // simpler and works whether or not a provider is available in the user's
   // region.
@@ -98,8 +97,9 @@ export function ForYouHero({ initialHero }: ForYouHeroProps) {
 
       <div className="flex flex-col md:flex-row gap-6 p-5 md:p-6">
         {/* Poster */}
-        <Link
-          href={detailHref}
+        <QuickViewLink
+          mediaType={hero.mediaType}
+          titleId={hero.tmdbId}
           className="relative w-full max-w-[200px] md:max-w-[220px] shrink-0 mx-auto md:mx-0 aspect-2/3 rounded-lg overflow-hidden bg-muted shadow-elevation-card group"
         >
           {posterUrl ? (
@@ -116,18 +116,19 @@ export function ForYouHero({ initialHero }: ForYouHeroProps) {
               No Image
             </div>
           )}
-        </Link>
+        </QuickViewLink>
 
         {/* Info */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {hero.reason && <ReasonBadge tone="primary">{hero.reason}</ReasonBadge>}
 
-          <Link
-            href={detailHref}
+          <QuickViewLink
+            mediaType={hero.mediaType}
+            titleId={hero.tmdbId}
             className="text-3xl md:text-4xl font-bold tracking-tight leading-tight text-foreground hover:text-primary transition-colors"
           >
             {hero.title}
-          </Link>
+          </QuickViewLink>
 
           {metaPieces.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
@@ -160,12 +161,12 @@ export function ForYouHero({ initialHero }: ForYouHeroProps) {
           )}
 
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Link href={detailHref}>
+            <QuickViewLink mediaType={hero.mediaType} titleId={hero.tmdbId}>
               <Button className="gap-2">
                 <Play className="w-4 h-4" />
                 {openLabel}
               </Button>
-            </Link>
+            </QuickViewLink>
             <Button
               variant="outline"
               onClick={handleMarkWatched}

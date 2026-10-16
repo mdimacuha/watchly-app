@@ -331,6 +331,15 @@ export const userProfiles = pgTable(
     // /settings/appearance.
     bannerEnabled: boolean('banner_enabled').notNull().default(true),
 
+    // Profile card highlight slot (see src/constants/cardFeature.ts). Null
+    // mode = 'now_showing' (the default). Plain text like accentColor so new
+    // modes / label presets need no migration; validated on read + write.
+    cardFeatureMode: text('card_feature_mode'),
+    // 'custom' mode only: the chosen favorite and its label preset.
+    cardFeatureMediaType: text('card_feature_media_type'),
+    cardFeatureMediaId: text('card_feature_media_id'),
+    cardFeatureLabel: text('card_feature_label'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -482,6 +491,10 @@ export const watchlistItems = pgTable(
     notes: text('notes'),
 
     sortOrder: integer('sort_order').notNull().default(0),
+    // Set when the curator first places the item in their ranking (drag).
+    // Null = not ranked yet: shown pinned on top as "Recently Added" with no
+    // rank number.
+    rankedAt: timestamp('ranked_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -655,6 +668,142 @@ export const titleSwipes = pgTable(
       s.titleId,
       s.titleType,
     ),
+  }),
+);
+
+/**
+ * Append-only log of profile behaviour: who views profiles (self /
+ * follower / stranger / guest, and from where — incl. share links via
+ * ?ref), what they open, and whether they follow or share. The baseline for
+ * judging the profile redesign (north star: visitor view → follow).
+ * Guests can view profiles, so the viewer (user_id) is nullable. Never
+ * updated; rows go with either account (cascade).
+ */
+export const profileEvents = pgTable(
+  'profile_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // The viewer (null for guests).
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    // Whose profile.
+    profileUserId: uuid('profile_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').notNull(),
+    // 'profile_viewed' | 'section_opened' | 'title_opened' | 'follow' |
+    // 'share'. Text so new kinds need no migration.
+    event: text('event').notNull(),
+    titleKey: text('title_key'),
+    // viewer kind, source/ref, layout variant, section, position, …
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    profileCreatedIdx: index('profile_events_profile_created_idx').on(e.profileUserId, e.createdAt),
+    userCreatedIdx: index('profile_events_user_created_idx').on(e.userId, e.createdAt),
+  }),
+);
+
+/**
+ * Append-only log of For You behaviour — the baseline that tells whether a
+ * redesign helps people decide: feed views, title opens (by layout slot),
+ * spins, filter changes, dismissals, and commitments (marked watched / added
+ * to a watchlist). Signed-in only, so user_id is required. Never updated.
+ */
+export const forYouEvents = pgTable(
+  'for_you_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').notNull(),
+    // 'feed_viewed' | 'title_opened' | 'spin' | 'filter_changed' |
+    // 'dismissed' | 'committed'. Text so new kinds need no migration.
+    event: text('event').notNull(),
+    // "movie:123" / "tv:456" when the event concerns a title.
+    titleKey: text('title_key'),
+    // Layout variant, slot, position, filters, reason, commit kind, …
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    userCreatedIdx: index('for_you_events_user_created_idx').on(e.userId, e.createdAt),
+    sessionIdx: index('for_you_events_session_idx').on(e.sessionId),
+  }),
+);
+
+/**
+ * Append-only log of search behaviour, for measuring whether search works:
+ * zero-result and reformulation rates, which sections get opened (top
+ * result / people / related theme / titles / end-cap / suggestions), and —
+ * joined to favorites/watchlists by user + time — search→save conversion.
+ * Guests can search, so user_id is nullable and `session_id` (an anonymous
+ * per-tab id) ties a visit's events together. Never updated.
+ */
+export const searchEvents = pgTable(
+  'search_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Nullable for guests; a deleted account takes its events with it.
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').notNull(),
+    // 'search_performed' | 'result_opened' | 'keyword_chip_clicked' |
+    // 'endcap_shown'. Text so new kinds need no migration.
+    event: text('event').notNull(),
+    query: text('query'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    createdIdx: index('search_events_created_idx').on(e.createdAt),
+    userCreatedIdx: index('search_events_user_created_idx').on(e.userId, e.createdAt),
+    sessionIdx: index('search_events_session_idx').on(e.sessionId),
+  }),
+);
+
+/**
+ * Append-only log of every swipe interaction. `title_swipes` holds the
+ * CURRENT decision per title (upserted, deleted on undo), which erases
+ * history — "opened then liked" stores only "liked", and undos leave no
+ * trace. This table keeps the sequence for measurement (open→decision
+ * conversion, undo/regret rate, decisions by deck position). Never updated;
+ * rows go away only with the user (cascade).
+ */
+export const titleSwipeEvents = pgTable(
+  'title_swipe_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    titleId: text('title_id').notNull(),
+    titleType: text('title_type').notNull(),
+    // A swipe action ('liked' | 'passed' | 'saved' | 'opened') or 'undo'.
+    // Text, like title_swipes.action, so new event kinds need no migration.
+    event: text('event').notNull(),
+    // Same values as title_swipes.source; 'manual' = changed from History.
+    source: text('source').notNull().default('swipe_discovery'),
+    scoreSnapshot: numeric('score_snapshot'),
+    // Deck context from the client: sessionId, position, input, isWildcard,
+    // reason.
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    userCreatedIdx: index('title_swipe_events_user_created_idx').on(
+      e.userId,
+      e.createdAt,
+    ),
+    titleIdx: index('title_swipe_events_title_idx').on(e.titleId, e.titleType),
   }),
 );
 

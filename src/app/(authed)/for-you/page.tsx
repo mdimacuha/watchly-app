@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Sparkles, Search, Bookmark, ArrowLeftRight } from 'lucide-react';
-import { getForYouFeedAction } from '@/actions/forYou';
+import { getForYouFeedAction, getForYouPoolAction } from '@/actions/forYou';
+import { ForYouMain } from "@/components/forYou/ForYouPrototype";
 import { ForYouHero } from '@/components/forYou/ForYouHero';
 import { ForYouRow } from '@/components/forYou/ForYouRow';
 import { PreferencesButton } from '@/components/forYou/PreferencesButton';
@@ -29,6 +30,18 @@ export default async function ForYouPage() {
   // Validates the session against the DB so a stale cookie redirects to
   // /signin cleanly instead of crashing inside the feed action.
   await requireUser();
+
+  // PROTOTYPE: the Programme + Dial on the shared pool (round 2), dev
+  // builds only. Production keeps the current page until a winner is picked.
+  if (process.env.NODE_ENV !== 'production') {
+    const pool = await getForYouPoolAction();
+    return (
+      <div className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full">
+        <ForYouMain pool={pool} />
+      </div>
+    );
+  }
+
   const feed = await getForYouFeedAction();
 
   const hasContent = feed.hero !== null || feed.rows.length > 0;
@@ -42,7 +55,7 @@ export default async function ForYouPage() {
             <h1 className="text-h2">Tonight&apos;s Briefing</h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            Curated from your library and services. No algorithms.
+            Picked from your favorites, watchlists and swipes.
           </p>
         </div>
         <PreferencesButton />

@@ -9,6 +9,11 @@ import { TitleTabs } from "./TitleTabs";
 import { TvSeasonPayload } from "@/services/tmdb/tvSeason";
 import { formatDate, formatRuntime } from "@/lib/format";
 import { SkeletonBox } from "@/components/watchly/skeletons";
+import { ViewAllDivider } from "@/components/watchly/ViewAllDivider";
+import { estimateRuntime } from "@/lib/seasons";
+
+/** Seasons shown before "View all". */
+const COLLAPSED_SEASONS = 3;
 
 interface SeasonSummary {
   seasonNumber: number;
@@ -22,10 +27,13 @@ interface SeasonSummary {
 interface TvSeasonsEpisodesPanelProps {
   seriesId: number;
   seasons: SeasonSummary[];
+  /** Typical episode length in minutes, for season run-time estimates. */
+  episodeRuntime?: number | null;
 }
 
-export function TvSeasonsEpisodesPanel({ seriesId, seasons }: TvSeasonsEpisodesPanelProps) {
+export function TvSeasonsEpisodesPanel({ seriesId, seasons, episodeRuntime }: TvSeasonsEpisodesPanelProps) {
   const [activeTab, setActiveTab] = useState("SEASONS");
+  const [seasonsExpanded, setSeasonsExpanded] = useState(false);
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number>(() => {
     // Default to season 1 or first available
     const hasSeason1 = seasons.find(s => s.seasonNumber === 1);
@@ -61,7 +69,9 @@ export function TvSeasonsEpisodesPanel({ seriesId, seasons }: TvSeasonsEpisodesP
   const activeSeasonDetails = seasonDetailsCache[selectedSeasonNumber];
 
   return (
-    <div className="mt-12 w-full max-w-4xl">
+    // Full width of its parent (the title page container); spacing comes
+    // from the parent's gap.
+    <div className="w-full">
       <TitleTabs
         tabs={[
           { key: "SEASONS", label: "Seasons" },
@@ -72,39 +82,78 @@ export function TvSeasonsEpisodesPanel({ seriesId, seasons }: TvSeasonsEpisodesP
         className="mb-6"
       />
 
+      {/* Seasons list — same row layout as the Episodes list below. Clicking
+          a season opens its episodes in place (Episodes tab) instead of
+          leaving the page. */}
       {activeTab === "SEASONS" && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {seasons.map((season) => (
-            <Link
-              key={season.seasonNumber}
-              href={`/tv/${seriesId}/season/${season.seasonNumber}`}
-              className="group flex flex-col gap-2 p-2 rounded-lg hover:bg-muted/10 transition-colors"
-            >
-              <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-muted shadow-sm border border-white/5">
-                {season.posterPath ? (
-                  <Image
-                    src={buildImageUrl(season.posterPath, "w300") || ''}
-                    alt={season.name}
-                    fill
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 200px"
-                    className="object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-secondary text-xs text-muted-foreground">
-                    NO POSTER
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col border rounded-lg border-border/50 divide-y divide-border/10 bg-card/50">
+            {(seasonsExpanded ? seasons : seasons.slice(0, COLLAPSED_SEASONS)).map((season) => {
+              const runtime = estimateRuntime(season.episodeCount ?? 0, episodeRuntime ?? null);
+              return (
+                <button
+                  key={season.seasonNumber}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSeasonNumber(season.seasonNumber);
+                    setActiveTab("EPISODES");
+                  }}
+                  className="flex gap-4 p-4 hover:bg-muted/5 transition-colors group items-start text-left cursor-pointer"
+                >
+                  <div className="hidden sm:block relative w-16 aspect-2/3 shrink-0 bg-muted rounded overflow-hidden border border-white/5">
+                    {season.posterPath ? (
+                      <Image
+                        src={buildImageUrl(season.posterPath, "w154") || ''}
+                        alt={season.name}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-[9px] text-muted-foreground">
+                        NO IMG
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">
-                  {season.name}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {season.episodeCount} Episodes
-                </p>
-              </div>
-            </Link>
-          ))}
+  
+                  <div className="flex flex-col flex-1 min-w-0 gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-muted-foreground w-6 shrink-0">
+                        {season.seasonNumber === 0 ? "SP" : season.seasonNumber}
+                      </span>
+                      <h4 className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors truncate">
+                        {season.name}
+                      </h4>
+                    </div>
+  
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground pl-8">
+                      {season.airDate && <span>{formatDate(season.airDate)}</span>}
+                      {season.episodeCount != null && (
+                        <span>
+                          {season.episodeCount} {season.episodeCount === 1 ? "episode" : "episodes"}
+                        </span>
+                      )}
+                      {/* Estimate: episodes × typical episode length. */}
+                      {runtime && <span>{runtime}</span>}
+                    </div>
+  
+                    {season.overview && (
+                      <p className="text-xs text-muted-foreground/80 line-clamp-2 mt-1 pl-8">
+                        {season.overview}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {seasons.length > COLLAPSED_SEASONS && (
+            <ViewAllDivider
+              expanded={seasonsExpanded}
+              total={seasons.length}
+              onToggle={() => setSeasonsExpanded((v) => !v)}
+            />
+          )}
         </div>
       )}
 

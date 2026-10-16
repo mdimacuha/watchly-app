@@ -11,6 +11,7 @@ import { CollectionCard } from './CollectionCard';
 import { TvSeasonsEpisodesPanel } from './TvSeasonsEpisodesPanel';
 
 import { DetailsTab } from './tabs/DetailsTab';
+import { seriesSummaryParts } from '@/lib/seasons';
 
 interface TitleHeroProps {
   titleData: TitlePagePayload;
@@ -31,11 +32,17 @@ export function TitleHero({ titleData, onWatchTrailer }: TitleHeroProps) {
   } = titleData;
   const posterUrl = buildImageUrl(details.posterPath, 'w500');
   const backdropUrl = buildImageUrl(details.backdropPath, 'w1280');
+  const seriesSummary = tvSeasons
+    ? seriesSummaryParts(tvSeasons.seasons, details.runtimeMinutes)
+    : [];
 
   return (
     <div className="relative w-full min-h-screen overflow-hidden">
-      {/* Background Image with Gradient Overlay */}
-      <div className="absolute inset-0 z-0">
+      {/* Background Image with Gradient Overlay. Pinned to a viewport-height
+          box at the top (not inset-0) so its object-cover crop doesn't
+          rescale/shift when the page grows (expanding seasons, tabs). The
+          bottom gradient fades it into the page background. */}
+      <div className="absolute inset-x-0 top-0 h-screen z-0">
         {backdropUrl && (
           <Image
             src={backdropUrl}
@@ -88,8 +95,16 @@ export function TitleHero({ titleData, onWatchTrailer }: TitleHeroProps) {
                   </span>
                 )}
                 {details.runtimeMinutes && (
-                  <span>{formatRuntime(details.runtimeMinutes)}</span>
+                  // TV runtime is per episode — label it so it doesn't read
+                  // as the show's total next to the series summary.
+                  <span>
+                    {formatRuntime(details.runtimeMinutes)}
+                    {mediaType === 'tv' && ' / ep'}
+                  </span>
                 )}
+                {/* TV: series size at a glance, e.g. "14 seasons · 308
+                    episodes · ~154h 0m total". Same math as Quick View. */}
+                {seriesSummary.length > 0 && <span>{seriesSummary.join(' · ')}</span>}
               </div>
 
               {/* Genre Pills */}
@@ -140,11 +155,14 @@ export function TitleHero({ titleData, onWatchTrailer }: TitleHeroProps) {
           </div>
         </div>
 
-        {/* TV Seasons & Episodes */}
+        {/* TV Seasons & Episodes — its own full-width section below the
+            hero, spanning the container like Top Cast / Details. */}
         {mediaType === "tv" && tvSeasons && (
-          <div className="w-full">
-            <TvSeasonsEpisodesPanel seriesId={tvSeasons.seriesId} seasons={tvSeasons.seasons} />
-          </div>
+          <TvSeasonsEpisodesPanel
+            seriesId={tvSeasons.seriesId}
+            seasons={tvSeasons.seasons}
+            episodeRuntime={details.runtimeMinutes}
+          />
         )}
 
         {/* Bottom Section: Top Cast + Details */}
