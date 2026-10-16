@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ImageResponse } from 'next/og';
+import sharp from 'sharp';
 import type { ReactNode } from 'react';
 import type { ProfileShowcase } from '@/actions/profile';
 import { billingLine, estDate, memberCardModel, nameOf } from '@/components/profile/profileModel';
@@ -65,6 +66,26 @@ function loadWordmark(): Promise<string | null> {
   return wordmarkPromise;
 }
 
+/**
+ * The avatar as a PNG data URI. Uploaded avatars are WebP, which Satori can't
+ * decode (it silently drops the image), so re-encode with sharp. null → the
+ * initials disc.
+ */
+async function loadAvatar(avatarUrl: string | null | undefined, origin: string): Promise<string | null> {
+  if (!avatarUrl) return null;
+  try {
+    const res = await fetch(new URL(avatarUrl, origin), { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const png = await sharp(Buffer.from(await res.arrayBuffer()))
+      .resize(300, 300, { fit: 'cover' })
+      .png()
+      .toBuffer();
+    return `data:image/png;base64,${png.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 // Mirrors UserAvatar's hash → gradient so the initials disc matches the app.
 const AVATAR_GRADIENTS: [string, string][] = [
   ['#6366f1', '#d946ef'],
@@ -88,13 +109,12 @@ function alpha(hex: string, a: number) {
 }
 
 export async function renderProfileStory(showcase: ProfileShowcase, origin: string): Promise<ImageResponse> {
-  const [fonts, wordmark] = await Promise.all([loadFonts(), loadWordmark()]);
   const { overview } = showcase;
   const p = overview.profile;
+  const [fonts, wordmark, avatarSrc] = await Promise.all([loadFonts(), loadWordmark(), loadAvatar(p.avatarUrl, origin)]);
   const accent = isAccentSlug(p.accentColor) ? ACCENTS[p.accentColor].primary : ACCENTS.blue.primary;
   const { feature, featureLabel, tally, stamps, country } = memberCardModel(showcase);
   const hero = feature ? buildImageUrl(feature.backdropPath ?? feature.posterPath, 'w1280') : null;
-  const avatarSrc = p.avatarUrl ? new URL(p.avatarUrl, origin).toString() : null;
   const [g1, g2] = avatarGradient(`${p.firstName ?? ''}${p.lastName ?? ''}` || '?');
   const initials = `${p.firstName?.[0] ?? ''}${p.lastName?.[0] ?? ''}`.toUpperCase() || p.username[0]?.toUpperCase();
 
@@ -192,7 +212,7 @@ export async function renderProfileStory(showcase: ProfileShowcase, origin: stri
                     }}
                   >
                     <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: 3, textTransform: 'uppercase', color: C.muted }}>{s.label}</span>
-                    <span style={{ fontSize: 28, fontWeight: 700 }}>{s.value}</span>
+                    <StampValue value={s.value} color={accent} />
                   </div>
                 ))}
               </div>
@@ -219,15 +239,19 @@ export async function renderProfileStory(showcase: ProfileShowcase, origin: stri
           <div style={{ position: 'absolute', right: 0, top: '50%', marginTop: -26, width: 26, height: 52, background: C.bg, borderTopLeftRadius: 26, borderBottomLeftRadius: 26, border: `3px solid ${alpha(accent, 0.55)}`, borderRight: 'none' }} />
         </div>
 
-        {/* By the numbers */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 28, marginBottom: 16 }}>
-          <Kicker color={C.fg}>By the numbers</Kicker>
-          <div style={{ display: 'flex', flex: 1, height: 2, background: C.border }} />
+        {/* By the numbers — takes the remaining height and clips, so an
+            unusually tall card (long bio, wrapped lines) can never push the
+            stats into the footer. */}
+        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 28, marginBottom: 16 }}>
+            <Kicker color={C.fg}>By the numbers</Kicker>
+            <div style={{ display: 'flex', flex: 1, height: 2, background: C.border }} />
+          </div>
+          <Numbers showcase={showcase} accent={accent} />
         </div>
-        <Numbers showcase={showcase} accent={accent} />
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 44, flexShrink: 0, fontSize: 26, color: C.muted }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 44, flexShrink: 0, fontSize: 26, color: C.muted }}>
           <span>Find me on Watchly</span>
           <span style={{ color: C.fg, fontWeight: 600 }}>{`${SITE_URL.replace(/^https?:\/\//, '')}/user/${p.username}`}</span>
         </div>
@@ -313,12 +337,8 @@ function Numbers({ showcase, accent }: { showcase: ProfileShowcase; accent: stri
       ),
     });
   }
-  if (insights.reviews.count > 0 && insights.reviews.average != null) {
-    half.push({
-      label: 'Review voice',
-      node: <Big value={`${insights.reviews.average}★`} unit={`avg of ${insights.reviews.count}`} />,
-    });
-  }
+  // No Review voice frame here: the card's "Avg" stamp already carries it,
+  // and a fifth frame pushes the story past its 1920px canvas.
 
   const rows: (typeof half)[] = [];
   for (let i = 0; i < half.length; i += 2) rows.push(half.slice(i, i + 2));
@@ -384,6 +404,21 @@ function Frame({ n, label, background, children }: { n: number; label: string; b
         <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: 3, textTransform: 'uppercase', color: C.muted }}>{label}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+/** Stamp value; a trailing ★ is drawn as SVG (Geist has no star glyph → tofu). */
+function StampValue({ value, color }: { value: string; color: string }) {
+  const star = value.endsWith('★');
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 28, fontWeight: 700 }}>
+      <span>{star ? value.slice(0, -1) : value}</span>
+      {star && (
+        <svg width="24" height="24" viewBox="0 0 24 24">
+          <path d="M12 2.5l2.94 5.96 6.56.95-4.75 4.63 1.12 6.54L12 17.5l-5.87 3.08 1.12-6.54L2.5 9.41l6.56-.95z" fill={color} />
+        </svg>
+      )}
     </div>
   );
 }
