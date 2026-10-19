@@ -4,16 +4,11 @@ import { unstable_cache, updateTag } from 'next/cache';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { userProfiles } from '@/db/schema';
-import { ACCENT_SLUGS, type AccentSlug } from '@/constants/accentColors';
+import { normalizeAccentColor, type AccentColor } from '@/constants/accentColors';
 
 const ACCENT_TAG = (userId: string) => `profile-accent:${userId}`;
 const ACCENT_REVALIDATE_SECONDS = 60 * 60; // 1h — accent rarely changes
 
-function asAccentSlug(v: string | null | undefined): AccentSlug | null {
-  return v && (ACCENT_SLUGS as readonly string[]).includes(v)
-    ? (v as AccentSlug)
-    : null;
-}
 
 /**
  * Cached accent-color lookup. Called from `(authed)` + `(public)` layouts
@@ -24,7 +19,7 @@ function asAccentSlug(v: string | null | undefined): AccentSlug | null {
  */
 export async function getAccentColorFor(
   userId: string,
-): Promise<AccentSlug | null> {
+): Promise<AccentColor | null> {
   const cached = unstable_cache(
     async (uid: string) => {
       const [row] = await db
@@ -39,7 +34,7 @@ export async function getAccentColorFor(
   );
 
   const raw = await cached(userId);
-  return asAccentSlug(raw);
+  return normalizeAccentColor(raw);
 }
 
 /**

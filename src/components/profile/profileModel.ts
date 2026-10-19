@@ -77,7 +77,8 @@ export function memberCardModel(showcase: ProfileShowcase): MemberCardModel {
   const { tasteProfile } = showcase.overview;
   const { insights } = showcase;
   const now = insights.nowShowing[0] ?? null;
-  const pinned = rankedFavorites(showcase, 1)[0] ?? null;
+  // "Their #1": the owner's first Feature presentation pick, else their top-ranked favorite.
+  const pinned = showcase.featured[0] ?? rankedFavorites(showcase, 1)[0] ?? null;
   // Highlight slot, per the owner's setting (Edit profile → Card highlight):
   // a chosen favorite under their label, their #1, or Now showing (→ #1).
   const cf = p.cardFeature;

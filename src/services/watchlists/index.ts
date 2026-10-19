@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { watchlists, watchlistItems, users, userProfiles } from '@/db/schema';
 import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
+import { mapWithConcurrency } from '@/lib/concurrency';
 import { recordActivity } from '@/services/activity/record';
 import {
   createWatchlistSchema,
@@ -10,6 +11,8 @@ import {
   updateItemNotesSchema,
   reorderItemsSchema,
   setItemRankSchema,
+  WATCHED_STATUSES,
+  isWatchedStatus,
   type CreateWatchlistInput,
   type UpdateWatchlistInput,
   type WatchlistMediaType,
@@ -24,7 +27,8 @@ import { requireVerifiedOrInGrace } from '@/services/auth/verificationGate';
 import { moderateText } from '@/services/moderation/contentModeration';
 import { logger } from '@/lib/log';
 import { placeAtRank } from '@/lib/ranking';
-import { invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { forYouTag, invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { unstable_cache } from 'next/cache';
 
 // Helper: runs name + description through moderateText. Throws a
 // generic ValidationAppError on profanity / slur match so the user
@@ -73,6 +77,18 @@ export type WatchlistWithCount = Watchlist & {
   itemCount: number;
   /** Up to 3 TMDB poster paths from the top items, for the collage thumbnail. */
   posterPaths: string[];
+  /** Items watched (finished or rewatch). Only set by `listWatchlists` (the owner's page). */
+  finishedCount?: number;
+  /** Items in progress (watching; rewatch counts as watched). Only set by `listWatchlists`. */
+  watchingCount?: number;
+  /** Later of the list's own edit and its newest item change. Only set by `listWatchlists`. */
+  lastActivityAt?: Date;
+  /** Poster + title of the top items (`listWatchlists` previews option, else 3). */
+  previews?: { posterPath: string; title: string }[];
+  /** Sum of every item's runtime, minutes (`listWatchlists` runtimes option). */
+  runtimeMinutes?: number;
+  /** Runtime of watched (finished / rewatch) items, minutes. */
+  watchedRuntimeMinutes?: number;
 };
 export interface WatchlistOwner {
   id: string;
@@ -172,8 +188,13 @@ export async function deleteWatchlist(
 
 type WatchlistAggregate = Omit<WatchlistWithCount, 'posterPaths'>;
 
+/**
+ * `previews`: how many top items carry poster + title (the watchlists page
+ * scrubs through them). `runtimes`: attach total / watched runtime per list.
+ */
 export async function listWatchlists(
   userId: string,
+  opts: { previews?: number; runtimes?: boolean } = {},
 ): Promise<WatchlistWithCount[]> {
   const rows = await db
     .select({
@@ -185,38 +206,160 @@ export async function listWatchlists(
       createdAt: watchlists.createdAt,
       updatedAt: watchlists.updatedAt,
       itemCount: sql<number>`count(${watchlistItems.id})::int`,
+      // Progress for the owner's list page, in the same grouped query.
+      finishedCount: sql<number>`count(${watchlistItems.id}) filter (where ${inArray(watchlistItems.status, [...WATCHED_STATUSES])})::int`,
+      watchingCount: sql<number>`count(${watchlistItems.id}) filter (where ${watchlistItems.status} = 'watching')::int`,
+      // Item adds / status changes don't touch the list row, so "last
+      // updated" is the later of the list's own edit and its newest item.
+      lastActivityAt: sql<Date>`greatest(${watchlists.updatedAt}, max(${watchlistItems.updatedAt}))`.mapWith(
+        (v: string | Date) => new Date(v),
+      ),
     })
     .from(watchlists)
     .leftJoin(watchlistItems, eq(watchlistItems.watchlistId, watchlists.id))
     .where(eq(watchlists.userId, userId))
     .groupBy(watchlists.id)
-    .orderBy(desc(watchlists.updatedAt));
+    .orderBy(sql`greatest(${watchlists.updatedAt}, max(${watchlistItems.updatedAt})) desc`);
 
-  return attachPosters(rows);
+  const [withPosters, runtimes] = await Promise.all([
+    attachPosters(rows, opts.previews),
+    opts.runtimes ? getWatchlistRuntimes(userId) : Promise.resolve(null),
+  ]);
+  if (!runtimes) return withPosters;
+  return withPosters.map((l) => ({
+    ...l,
+    runtimeMinutes: runtimes[l.id]?.totalMinutes ?? 0,
+    watchedRuntimeMinutes: runtimes[l.id]?.watchedMinutes ?? 0,
+  }));
 }
 
-/** Public-only watchlists for a user. Used by `/user/[username]`. */
+/**
+ * Public-only watchlists for a user, shaped like the owner's list page
+ * (scrub previews, progress, runtimes) so the profile can use the same cover
+ * cards. Used by `/user/[username]` and `/me`.
+ */
 export async function listPublicWatchlists(
   userId: string,
 ): Promise<WatchlistWithCount[]> {
-  const rows = await db
-    .select({
-      id: watchlists.id,
-      userId: watchlists.userId,
-      name: watchlists.name,
-      description: watchlists.description,
-      isPublic: watchlists.isPublic,
-      createdAt: watchlists.createdAt,
-      updatedAt: watchlists.updatedAt,
-      itemCount: sql<number>`count(${watchlistItems.id})::int`,
-    })
-    .from(watchlists)
-    .leftJoin(watchlistItems, eq(watchlistItems.watchlistId, watchlists.id))
-    .where(and(eq(watchlists.userId, userId), eq(watchlists.isPublic, true)))
-    .groupBy(watchlists.id)
-    .orderBy(desc(watchlists.updatedAt));
+  const lists = await listWatchlists(userId, { previews: 12, runtimes: true });
+  return lists.filter((l) => l.isPublic);
+}
 
-  return attachPosters(rows);
+export type TitlePreview = { posterPath: string; title: string };
+
+/** Poster + title for one `mediaType:mediaId` key; null when TMDB has no poster or fails. */
+async function fetchPreview(key: string): Promise<TitlePreview | null> {
+  const [mediaType, mediaId] = key.split(':');
+  try {
+    const raw = await tmdbFetch<{ poster_path?: string | null; title?: string; name?: string }>(
+      `/${mediaType}/${mediaId}`,
+    );
+    return raw.poster_path ? { posterPath: raw.poster_path, title: raw.title ?? raw.name ?? '' } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runtime in minutes for one `mediaType:mediaId`: movie runtime, or for a
+ * series regular-season episodes × typical episode length (same estimate the
+ * title page shows). Null when TMDB lacks the data. Same TMDB URL as
+ * fetchPreview, so they share the fetch cache. Throws on fetch failure.
+ */
+async function fetchRuntime(key: string): Promise<number | null> {
+  const [mediaType, mediaId] = key.split(':');
+  const raw = await tmdbFetch<{
+    runtime?: number | null;
+    episode_run_time?: number[];
+    last_episode_to_air?: { runtime?: number | null } | null;
+    number_of_episodes?: number | null;
+    seasons?: { season_number: number; episode_count: number | null }[];
+  }>(`/${mediaType}/${mediaId}`);
+  if (mediaType === 'movie') return raw.runtime || null;
+  const perEpisode = raw.episode_run_time?.[0] || raw.last_episode_to_air?.runtime || null;
+  const regular = (raw.seasons ?? []).filter((s) => s.season_number > 0);
+  const episodes = regular.length
+    ? regular.reduce((n, s) => n + (s.episode_count ?? 0), 0)
+    : (raw.number_of_episodes ?? 0);
+  return perEpisode && episodes ? perEpisode * episodes : null;
+}
+
+export type ListRuntime = { totalMinutes: number; watchedMinutes: number };
+
+class PartialRuntimeError extends Error {
+  constructor(readonly result: Record<string, ListRuntime>) {
+    super('partial runtime totals');
+  }
+}
+
+/**
+ * Total and watched (finished / rewatch) runtime per list for a user, keyed
+ * by watchlist id. One TMDB detail per unique title (8 at a time), cached
+ * per user under the For You tag — every item add / remove / status change
+ * already busts it. A build with TMDB failures is returned, not cached.
+ */
+export async function getWatchlistRuntimes(userId: string): Promise<Record<string, ListRuntime>> {
+  const cached = unstable_cache(
+    async () => {
+      const rows = await db
+        .select({
+          watchlistId: watchlistItems.watchlistId,
+          mediaType: watchlistItems.mediaType,
+          mediaId: watchlistItems.mediaId,
+          status: watchlistItems.status,
+        })
+        .from(watchlistItems)
+        .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
+        .where(eq(watchlists.userId, userId));
+
+      const keys = [...new Set(rows.map((r) => `${r.mediaType}:${r.mediaId}`))];
+      let failed = 0;
+      const minutes = await mapWithConcurrency(keys, 8, (k) =>
+        fetchRuntime(k).catch(() => {
+          failed++;
+          return null;
+        }),
+      );
+      const byKey = new Map(keys.map((k, i) => [k, minutes[i] ?? 0]));
+
+      const result: Record<string, ListRuntime> = {};
+      for (const r of rows) {
+        const m = byKey.get(`${r.mediaType}:${r.mediaId}`) ?? 0;
+        const acc = (result[r.watchlistId] ??= { totalMinutes: 0, watchedMinutes: 0 });
+        acc.totalMinutes += m;
+        if (isWatchedStatus(r.status)) acc.watchedMinutes += m;
+      }
+      if (failed > 0) throw new PartialRuntimeError(result);
+      return result;
+    },
+    ['watchlist-runtimes', userId],
+    { revalidate: 3600, tags: [forYouTag(userId)] },
+  );
+  try {
+    return await cached();
+  } catch (err) {
+    if (err instanceof PartialRuntimeError) return err.result;
+    throw err;
+  }
+}
+
+const PREVIEW_LIMIT = 100;
+
+/**
+ * Every item's poster + title for one of the user's lists, in list order —
+ * the watchlists page loads these on first hover to scrub past the initial
+ * previews. Capped at PREVIEW_LIMIT, TMDB lookups at most 8 at a time.
+ */
+export async function getWatchlistPreviews(watchlistId: string, userId: string): Promise<TitlePreview[]> {
+  await requireOwnedWatchlist(watchlistId, userId);
+  const items = await db
+    .select({ mediaType: watchlistItems.mediaType, mediaId: watchlistItems.mediaId })
+    .from(watchlistItems)
+    .where(eq(watchlistItems.watchlistId, watchlistId))
+    .orderBy(desc(watchlistItems.sortOrder), desc(watchlistItems.createdAt))
+    .limit(PREVIEW_LIMIT);
+  const previews = await mapWithConcurrency(items, 8, (it) => fetchPreview(`${it.mediaType}:${it.mediaId}`));
+  return previews.filter((p): p is TitlePreview => p !== null);
 }
 
 /**
@@ -226,6 +369,7 @@ export async function listPublicWatchlists(
  */
 async function attachPosters(
   rows: WatchlistAggregate[],
+  count: number = THUMBNAIL_POSTER_COUNT,
 ): Promise<WatchlistWithCount[]> {
   if (rows.length === 0) return [];
 
@@ -249,7 +393,7 @@ async function attachPosters(
       mediaId: ranked.mediaId,
     })
     .from(ranked)
-    .where(lte(ranked.rn, THUMBNAIL_POSTER_COUNT))
+    .where(lte(ranked.rn, count))
     .orderBy(ranked.watchlistId, ranked.rn);
 
   const topByList = new Map<string, typeof topItems>();
@@ -266,27 +410,23 @@ async function attachPosters(
     for (const it of items) uniqueKeys.add(`${it.mediaType}:${it.mediaId}`);
   }
 
-  const posterByKey = new Map<string, string | null>();
+  const previewByKey = new Map<string, TitlePreview | null>();
   await Promise.all(
     Array.from(uniqueKeys).map(async (key) => {
-      const [mediaType, mediaId] = key.split(':');
-      try {
-        const raw = await tmdbFetch<{ poster_path?: string | null }>(
-          `/${mediaType}/${mediaId}`,
-        );
-        posterByKey.set(key, raw.poster_path ?? null);
-      } catch {
-        posterByKey.set(key, null);
-      }
+      previewByKey.set(key, await fetchPreview(key));
     }),
   );
 
-  return rows.map((row, i) => ({
-    ...row,
-    posterPaths: itemsByList[i]
-      .map((it) => posterByKey.get(`${it.mediaType}:${it.mediaId}`) ?? null)
-      .filter((p): p is string => Boolean(p)),
-  }));
+  return rows.map((row, i) => {
+    const previews = itemsByList[i]
+      .map((it) => previewByKey.get(`${it.mediaType}:${it.mediaId}`) ?? null)
+      .filter((p): p is TitlePreview => p !== null);
+    return {
+      ...row,
+      posterPaths: previews.slice(0, THUMBNAIL_POSTER_COUNT).map((p) => p.posterPath),
+      previews,
+    };
+  });
 }
 
 export async function getWatchlist(
@@ -610,6 +750,12 @@ export async function removeItem(
         eq(watchlistItems.mediaId, mediaId),
       ),
     );
+  // A removal leaves no item row behind to carry its timestamp, so bump the
+  // list itself; listWatchlists' lastActivityAt then reflects it.
+  await db
+    .update(watchlists)
+    .set({ updatedAt: new Date() })
+    .where(eq(watchlists.id, watchlistId));
   invalidateForYouPool(userId);
 }
 
@@ -625,8 +771,9 @@ const WATCHING_STATUSES: ReadonlySet<WatchlistItemStatus> = new Set([
  * timestamps:
  *   - started_at: set on first transition INTO watching/rewatch (if not already
  *     set). Never cleared — so "started X ago" stays stable across pauses.
- *   - finished_at: set on transition INTO finished. Cleared on transition OUT
- *     of finished (e.g. user marks as rewatch).
+ *   - finished_at: set on transition INTO a watched status (finished /
+ *     rewatch). Kept when moving between them — a rewatch keeps the date
+ *     you first finished it. Cleared when leaving both.
  *
  * Ownership is verified via a subquery on the parent watchlist.
  */
@@ -667,9 +814,9 @@ export async function updateItemStatus(
     const setStartedAt =
       !current.startedAt && WATCHING_STATUSES.has(next) ? now : undefined;
     const isEnteringFinished =
-      next === 'finished' && current.status !== 'finished';
+      isWatchedStatus(next) && !isWatchedStatus(current.status);
     const isLeavingFinished =
-      next !== 'finished' && current.status === 'finished';
+      !isWatchedStatus(next) && isWatchedStatus(current.status);
 
     await tx
       .update(watchlistItems)

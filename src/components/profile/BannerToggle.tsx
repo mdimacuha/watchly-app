@@ -8,7 +8,7 @@ import { setBannerEnabledAction } from '@/actions/profileBanner';
 import { getMyProfileAction } from '@/actions/profile';
 
 /**
- * Toggle for the profile-banner feature on /settings/appearance.
+ * Toggle for the profile-banner feature in Settings → Appearance.
  * Self-fetches the current state on mount so the parent page can stay
  * client-only without piping the value down.
  */

@@ -1,6 +1,7 @@
 import { tmdbFetch } from "@/server/tmdb/client";
 import { TmdbVideo, Genre } from "@/server/tmdb/types";
 import { getJustWatchOffers } from "@/services/justwatch";
+import { fallbackRegionsFor } from "@/lib/regions/nearby";
 
 export type MediaType = "movie" | "tv";
 
@@ -78,14 +79,6 @@ export interface TitleInfoPanelData {
   alternativeTitles: string[];
 }
 
-export interface FeedItem {
-  kind: "watch" | "news";
-  title: string;
-  ctaLabel: "WATCH NOW" | "READ POST";
-  href: string;
-  imagePath: string | null;
-  subtitle?: string | null;
-}
 
 export interface TitlePagePayload {
   mediaType: MediaType;
@@ -133,7 +126,36 @@ export interface TitlePagePayload {
   fallbackRegion?: string | null;
   infoPanelData: TitleInfoPanelData;
   releases: ReleaseRow[];
-  feedItems: FeedItem[];
+  extras: TitleExtras;
+}
+
+export interface TitleImage {
+  filePath: string;
+  width: number;
+  height: number;
+}
+
+export interface RelatedTitle {
+  id: number;
+  mediaType: MediaType;
+  title: string;
+  year: string | null;
+  posterPath: string | null;
+}
+
+/** Region-agnostic extras for the revamped title page (ISR-safe). */
+export interface TitleExtras {
+  /** TMDB status, e.g. "Released", "Post Production", "Returning Series". */
+  status: string | null;
+  popularity: number | null;
+  externalLinks: { label: string; url: string }[];
+  media: {
+    videos: TmdbVideo[];
+    backdrops: TitleImage[];
+    posters: TitleImage[];
+  };
+  /** TMDB recommendations and similar titles, interleaved and deduped. */
+  related: RelatedTitle[];
 }
 
 // Internal types for TMDB responses
@@ -225,6 +247,31 @@ interface TmdbTvDetails {
   original_language: string;
 }
 
+/** Fields both detail shapes share via append_to_response (title extras). */
+interface TmdbDetailExtras {
+  status?: string | null;
+  popularity?: number | null;
+  homepage?: string | null;
+  external_ids?: Partial<
+    Record<
+      "imdb_id" | "wikidata_id" | "facebook_id" | "instagram_id" | "twitter_id" | "tiktok_id",
+      string | null
+    >
+  >;
+  images?: {
+    backdrops: TmdbImage[];
+    posters: TmdbImage[];
+  };
+  similar?: TmdbRecommendations;
+}
+
+interface TmdbImage {
+  file_path: string;
+  width: number;
+  height: number;
+  vote_average: number;
+}
+
 interface TmdbReleaseDates {
   results: {
     iso_3166_1: string;
@@ -265,6 +312,9 @@ interface TmdbRecommendation {
   title?: string;
   name?: string; // for TV
   backdrop_path: string | null;
+  poster_path?: string | null;
+  release_date?: string;
+  first_air_date?: string;
   media_type?: string;
   overview: string;
 }
@@ -339,7 +389,7 @@ export async function getTitlePagePayload({
   }
 
   // Define parallel fetch promises
-  let detailsPromise: Promise<TmdbMovieDetails | TmdbTvDetails>;
+  let detailsPromise: Promise<(TmdbMovieDetails | TmdbTvDetails) & TmdbDetailExtras>;
   let ratingPromise: Promise<string | null>;
   let releaseDatesPromise: Promise<TmdbReleaseDates | null> = Promise.resolve(null);
   let contentRatingsPromise: Promise<TmdbContentRatings | null> = Promise.resolve(null);
@@ -353,18 +403,16 @@ export async function getTitlePagePayload({
     `/${mediaType}/${numericId}/recommendations`
   );
 
-  // 1. Details with credits and videos
-  const appendToResponse = "credits,videos";
+  // 1. Details with credits, videos and the page extras — one request.
+  // include_image_language keeps text-free stills ("null") next to English art.
+  const detailParams = {
+    append_to_response: "credits,videos,images,external_ids,similar",
+    include_image_language: "en,null",
+  };
   if (mediaType === "movie") {
-    detailsPromise = tmdbFetch<TmdbMovieDetails>(
-      `/movie/${numericId}`,
-      { append_to_response: appendToResponse }
-    );
+    detailsPromise = tmdbFetch<TmdbMovieDetails>(`/movie/${numericId}`, detailParams);
   } else {
-    detailsPromise = tmdbFetch<TmdbTvDetails>(
-      `/tv/${numericId}`,
-      { append_to_response: appendToResponse }
-    );
+    detailsPromise = tmdbFetch<TmdbTvDetails>(`/tv/${numericId}`, detailParams);
   }
 
   // 2. Content Rating & Releases
@@ -540,24 +588,6 @@ export async function getTitlePagePayload({
   releases.sort((a, b) => b.sortKey - a.sortKey);
 
 
-  // Feed Items (Watch / News)
-  const feedItems: FeedItem[] = [];
-  const recs = recommendationsData.results.slice(0, 3);
-  
-  recs.forEach((rec, i) => {
-    // Alternate between "watch" and "news" style just for UI demo purposes
-    // In reality, TMDB doesn't have news, so we frame recommendations as "Watch Now" or "Related News"
-    const isNews = i % 2 !== 0; 
-    feedItems.push({
-      kind: isNews ? "news" : "watch",
-      title: isNews ? `Production update: ${rec.title || rec.name}` : `Watch ${rec.title || rec.name}`,
-      ctaLabel: isNews ? "READ POST" : "WATCH NOW",
-      href: `/title/${rec.media_type || mediaType}/${rec.id}`,
-      imagePath: rec.backdrop_path,
-      subtitle: rec.overview ? rec.overview.slice(0, 60) + "..." : undefined
-    });
-  });
-
 
   // Normalize Credits
   const creditsRaw = detailsData.credits;
@@ -596,9 +626,8 @@ export async function getTitlePagePayload({
   // Normalize Providers — three-tier fallback:
   //   1. TMDB user region            → "ok"
   //   2. JustWatch user region       → "fallback_justwatch"  (e.g. Lost in PH → Disney+)
-  //   3. TMDB US                     → "fallback_region"     (e.g. Lost Girl in PH → CW + Amazon + Google Play)
-  // The third tier matches the legacy Watchly silent-US behavior, but renders
-  // an explicit note in the UI so users know they're not seeing local data.
+  //   3. TMDB nearest region, US last → "fallback_region"  (e.g. Crystal Lake in PH → Australia)
+  // The UI names the fallback country so users know it isn't local data.
   // Region-specific provider selection. Skipped entirely when no region is
   // supplied (region-agnostic / ISR render) — providers are then fetched
   // client-side by region via /api/v1/titles/[mediaType]/[id]?region=. This is
@@ -642,15 +671,18 @@ export async function getTitlePagePayload({
       }
     }
 
-    // Tier 3: TMDB US fallback. JustWatch indexes mostly major platforms;
-    // smaller shows (e.g. Lost Girl) may have nothing in JustWatch globally but
-    // still have TMDB US data. Skip if the user is already in US.
-    if (isEmpty(providers) && region !== "US") {
-      const usBuckets = bucketsFor(providersData.results["US"]);
-      if (!isEmpty(usBuckets)) {
-        providers = usBuckets;
-        providerSourceNote = "fallback_region";
-        fallbackRegion = "US";
+    // Tier 3: nearest region with TMDB data, US last (e.g. Crystal Lake in
+    // PH → Australia). TMDB returns every country in one response, so this
+    // costs no extra requests. Title page + Quick View only; cards stop at 2.
+    if (isEmpty(providers)) {
+      for (const code of fallbackRegionsFor(region)) {
+        const buckets = bucketsFor(providersData.results[code]);
+        if (!isEmpty(buckets)) {
+          providers = buckets;
+          providerSourceNote = "fallback_region";
+          fallbackRegion = code;
+          break;
+        }
       }
     }
   }
@@ -672,7 +704,96 @@ export async function getTitlePagePayload({
     fallbackRegion,
     infoPanelData: { ...infoPanelData, keyCrew },
     releases,
-    feedItems,
+    extras: buildExtras(detailsData, recommendationsData, mediaType, numericId),
+  };
+}
+
+const MEDIA_LIMIT = { videos: 12, backdrops: 12, posters: 8 };
+const RELATED_LIMIT = 20;
+
+/**
+ * One "you might like" list: recommendations (TMDB's watched-together
+ * signal) alternated with similar (genre/keyword overlap), so neither source
+ * crowds out the other. Deduped, the title itself excluded.
+ */
+function mergeRelated(
+  recommendations: TmdbRecommendation[] | undefined,
+  similar: TmdbRecommendation[] | undefined,
+  mediaType: MediaType,
+  selfId: number,
+): RelatedTitle[] {
+  const recs = toRelated(recommendations, mediaType);
+  const sims = toRelated(similar, mediaType);
+  const seen = new Set<string>([`${mediaType}-${selfId}`]);
+  const out: RelatedTitle[] = [];
+  for (let i = 0; i < Math.max(recs.length, sims.length) && out.length < RELATED_LIMIT; i++) {
+    for (const t of [recs[i], sims[i]]) {
+      if (!t || out.length >= RELATED_LIMIT) continue;
+      const key = `${t.mediaType}-${t.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+function toRelated(list: TmdbRecommendation[] | undefined, fallbackType: MediaType): RelatedTitle[] {
+  return (list ?? [])
+    .filter((r) => r.poster_path)
+    .map((r) => {
+      const date = r.release_date || r.first_air_date;
+      return {
+        id: r.id,
+        mediaType: r.media_type === "tv" || r.media_type === "movie" ? r.media_type : fallbackType,
+        title: r.title || r.name || "Untitled",
+        year: date ? date.slice(0, 4) : null,
+        posterPath: r.poster_path ?? null,
+      };
+    });
+}
+
+function toImages(list: TmdbImage[] | undefined, limit: number): TitleImage[] {
+  return (list ?? [])
+    .slice()
+    .sort((a, b) => b.vote_average - a.vote_average)
+    .slice(0, limit)
+    .map((i) => ({ filePath: i.file_path, width: i.width, height: i.height }));
+}
+
+const EXTERNAL_LINK_FORMATS: [keyof NonNullable<TmdbDetailExtras["external_ids"]>, string, (v: string) => string][] = [
+  ["imdb_id", "IMDb", (v) => `https://www.imdb.com/title/${v}`],
+  ["wikidata_id", "Wikidata", (v) => `https://www.wikidata.org/wiki/${v}`],
+  ["instagram_id", "Instagram", (v) => `https://www.instagram.com/${v}`],
+  ["twitter_id", "X", (v) => `https://x.com/${v}`],
+  ["facebook_id", "Facebook", (v) => `https://www.facebook.com/${v}`],
+  ["tiktok_id", "TikTok", (v) => `https://www.tiktok.com/@${v}`],
+];
+
+function buildExtras(
+  d: TmdbDetailExtras & { videos: TmdbVideos },
+  recommendations: TmdbRecommendations,
+  mediaType: MediaType,
+  numericId: number,
+): TitleExtras {
+  const externalLinks: TitleExtras["externalLinks"] = [];
+  if (d.homepage) externalLinks.push({ label: "Official site", url: d.homepage });
+  for (const [key, label, url] of EXTERNAL_LINK_FORMATS) {
+    const value = d.external_ids?.[key];
+    if (value) externalLinks.push({ label, url: url(value) });
+  }
+  externalLinks.push({ label: "TMDB", url: `https://www.themoviedb.org/${mediaType}/${numericId}` });
+
+  return {
+    status: d.status ?? null,
+    popularity: d.popularity ?? null,
+    externalLinks,
+    media: {
+      videos: d.videos.results.filter((v) => v.site === "YouTube").slice(0, MEDIA_LIMIT.videos),
+      backdrops: toImages(d.images?.backdrops, MEDIA_LIMIT.backdrops),
+      posters: toImages(d.images?.posters, MEDIA_LIMIT.posters),
+    },
+    related: mergeRelated(recommendations.results, d.similar?.results, mediaType, numericId),
   };
 }
 

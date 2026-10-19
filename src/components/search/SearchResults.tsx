@@ -8,6 +8,8 @@ import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import type { SearchPerson, SearchResponse, SearchResponseItem } from '@/types/tmdb';
 import { SearchResultsGrid } from './SearchResultsGrid';
 import { TmdbGridItem } from './TmdbGridItem';
@@ -196,6 +198,9 @@ function TopResult({ item, query, onOpen }: { item: SearchResponseItem; query: s
               ))}
             </div>
           )}
+          {item.providerBadges.length === 0 && item.availabilityChecked && (
+            <NotInRegionPill className="w-fit" />
+          )}
           <QuickViewLink
             mediaType={item.mediaType}
             titleId={item.id}
@@ -250,6 +255,7 @@ function PeopleRow({ people, onOpen }: { people: SearchPerson[]; onOpen: OnOpen 
   return (
     <section>
       <SectionHeader title="People" meta={`${people.length} matching`} />
+      <ArrowStrip label="people">
       <div className="no-scrollbar -mx-2 flex gap-2 overflow-x-auto px-2">
         {people.map((person, i) => {
           const photo = buildImageUrl(person.profilePath, 'w185');
@@ -281,6 +287,7 @@ function PeopleRow({ people, onOpen }: { people: SearchPerson[]; onOpen: OnOpen 
           );
         })}
       </div>
+      </ArrowStrip>
     </section>
   );
 }
@@ -293,6 +300,7 @@ function RelatedRow({ related, onOpen }: { related: Related; onOpen: OnOpen }) {
         title={`Related to “${related.keyword.name}”`}
         meta={`Tagged “${related.keyword.name}” · about ${related.totalResults.toLocaleString()} titles`}
       />
+      <ArrowStrip label="related titles">
       <div className="no-scrollbar -mx-1 flex gap-4 overflow-x-auto px-1 pb-1">
         {related.items.map((item, i) => (
           <TmdbGridItem
@@ -303,6 +311,7 @@ function RelatedRow({ related, onOpen }: { related: Related; onOpen: OnOpen }) {
           />
         ))}
       </div>
+      </ArrowStrip>
       <div className="mt-2">
         <AlsoKeywords related={related} />
       </div>

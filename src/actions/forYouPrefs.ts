@@ -33,6 +33,6 @@ export async function updateForYouPreferencesAction(
   // For You reads selectedProviders directly inside the orchestrator; a
   // revalidate forces the rows to re-filter on next view.
   revalidatePath('/for-you');
-  revalidatePath('/settings/preferences');
+  revalidatePath('/settings');
   return saved;
 }

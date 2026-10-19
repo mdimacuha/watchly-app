@@ -13,29 +13,36 @@
  * taste match.
  */
 
-import { useEffect, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion';
-import { ChevronDown, Crown, Eye, Link2, Palette, Pencil, Star, Users } from 'lucide-react';
+import { ChevronDown, Crown, Eye, Link2, Palette, Pencil, Star, StarHalf, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
-import { ACCENTS, ACCENT_SLUGS, type AccentSlug } from '@/constants/accentColors';
+import { type AccentColor } from '@/constants/accentColors';
 import { isVerifiedAccount } from '@/constants/verifiedAccounts';
 import { VerifiedBadge } from '@/components/profile/VerifiedBadge';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { FollowButton } from '@/components/social/FollowButton';
 import { ProfileMoreMenu } from '@/components/social/ProfileMoreMenu';
-import { WatchlistCard } from '@/components/watchlists/WatchlistCard';
+import { WatchlistCoverCard } from '@/components/watchlists/WatchlistCoverCard';
 import { FollowSuggestionsRow } from '@/components/social/FollowSuggestionsRow';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { ProfileEditModal } from '@/components/profile/ProfileEditModal';
 import { StoryExportButton } from '@/components/profile/StoryExportButton';
+import { ProfileLibrary } from '@/components/profile/ProfileLibrary';
+import { AccentPicker } from '@/components/profile/AccentPicker';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/button';
+import { FeaturePicker } from '@/components/profile/FeaturePicker';
+import { SpoilerText } from '@/components/reviews/SpoilerText';
 import { useToast } from '@/hooks/useToast';
 import { trackProfile } from '@/client/profileEvents';
-import { updateProfileAction } from '@/actions/profile';
+import { getProfileReviewsAction, updateProfileAction } from '@/actions/profile';
+import { formatRelativeAgo } from '@/lib/format';
 import type { ProfileShowcase } from '@/actions/profile';
 import type { InsightTitle } from '@/services/profile/insights';
 import { billingLine, estDate, memberCardModel, nameOf, rankedFavorites } from '@/components/profile/profileModel';
@@ -55,7 +62,7 @@ export function MemberProfile({ showcase, preview }: Props) {
   const ownerId = overview.profile.userId;
   const owner = overview.isSelf && !preview;
   // Local accent so swatches recolor instantly (saved in the background).
-  const [accent, setAccent] = useState<AccentSlug | null>(overview.profile.accentColor);
+  const [accent, setAccent] = useState<AccentColor | null>(overview.profile.accentColor);
 
   useEffect(() => {
     trackProfile(ownerId, 'profile_viewed', undefined, {
@@ -115,8 +122,8 @@ export function MemberProfile({ showcase, preview }: Props) {
           <ByTheNumbers showcase={showcase} />
         </div>
       )}
-      {tab === 'library' && <Library showcase={showcase} />}
-      {tab === 'reviews' && <Reviews showcase={showcase} />}
+      {tab === 'library' && <ProfileLibrary showcase={showcase} preview={preview} />}
+      {tab === 'reviews' && <Reviews showcase={showcase} preview={preview} />}
     </AccentScope>
   );
 }
@@ -223,8 +230,8 @@ function MemberCard({
 }: {
   showcase: ProfileShowcase;
   owner: boolean;
-  accent: AccentSlug | null;
-  onAccent: (a: AccentSlug | null) => void;
+  accent: AccentColor | null;
+  onAccent: (a: AccentColor | null) => void;
 }) {
   const p = showcase.overview.profile;
   const { feature, featureLabel, tally, stamps, country } = memberCardModel(showcase);
@@ -344,8 +351,8 @@ function ActionBar({
 }: {
   showcase: ProfileShowcase;
   owner: boolean;
-  accent: AccentSlug | null;
-  onAccent: (a: AccentSlug | null) => void;
+  accent: AccentColor | null;
+  onAccent: (a: AccentColor | null) => void;
 }) {
   const { overview } = showcase;
   const p = overview.profile;
@@ -365,11 +372,15 @@ function ActionBar({
     trackProfile(p.userId, 'share', undefined, { channel: 'copy_link' });
   };
 
-  const saveAccent = async (next: AccentSlug | null) => {
-    const prev = accent;
+  // Last saved accent: previews (dragging the wheel) aren't saved, so a
+  // failed save rolls back to this, not to a mid-drag colour.
+  const savedAccent = useRef(accent);
+  const saveAccent = async (next: AccentColor | null) => {
+    const prev = savedAccent.current;
     onAccent(next); // instant recolor
     try {
       await updateProfileAction({ displayName: p.displayName, bio: p.bio, avatarUrl: p.avatarUrl, accentColor: next });
+      savedAccent.current = next;
       router.refresh();
     } catch {
       onAccent(prev);
@@ -415,19 +426,21 @@ function ActionBar({
         )}
       </div>
 
-      {owner && swatchesOpen && (
-        <div role="radiogroup" aria-label="Accent color" className="flex flex-wrap items-center gap-2">
-          <Swatch label="Watchly default" color="#3B4FFF" active={accent === null} onClick={() => void saveAccent(null)} />
-          {ACCENT_SLUGS.map((slug) => (
-            <Swatch
-              key={slug}
-              label={ACCENTS[slug].name}
-              color={ACCENTS[slug].primary}
-              active={accent === slug}
-              onClick={() => void saveAccent(slug)}
-            />
-          ))}
-        </div>
+      {owner && (
+        <Modal
+          isOpen={swatchesOpen}
+          onClose={() => setSwatchesOpen(false)}
+          title="Accent colour"
+          className="max-w-lg gap-1 p-5 sm:p-6"
+        >
+          <p className="mb-4 pr-8 text-sm text-muted-foreground">
+            Colours your profile, your card and buttons for you. Changes save as you pick.
+          </p>
+          <AccentPicker value={accent} onPreview={onAccent} onCommit={(next) => void saveAccent(next)} defaultCustomOpen />
+          <div className="mt-5 flex justify-end">
+            <Button onClick={() => setSwatchesOpen(false)}>Done</Button>
+          </div>
+        </Modal>
       )}
 
       {owner && (
@@ -455,24 +468,6 @@ function ActionBar({
   );
 }
 
-function Swatch({ label, color, active, onClick }: { label: string; color: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={active}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      // Swatch colours are the accent palette's own data values.
-      style={{ backgroundColor: color }}
-      className={cn(
-        'h-7 w-7 rounded-full transition-transform cursor-pointer hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        active && 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
-      )}
-    />
-  );
-}
 
 /** Visitor's taste match (or a sign-in nudge for guests). */
 function MatchStrip({ showcase }: { showcase: ProfileShowcase }) {
@@ -508,40 +503,82 @@ function MatchStrip({ showcase }: { showcase: ProfileShowcase }) {
 // ---------------------------------------------------------------------------
 
 function FeaturePresentation({ showcase, owner }: { showcase: ProfileShowcase; owner: boolean }) {
-  const top4 = rankedFavorites(showcase, 4);
-  if (top4.length === 0) return null;
-  const [crown, ...supports] = top4;
+  // The owner's picks (up to 6, in order); without picks, favorites ranked by their ratings.
+  const [featured, setFeatured] = useState<InsightTitle[]>(showcase.featured);
+  const [editing, setEditing] = useState(false);
+  const router = useRouter();
+  const picked = featured.length > 0;
+  const titles: (InsightTitle & { rating?: number | null })[] = picked ? featured : rankedFavorites(showcase, 4);
   const pid = showcase.overview.profile.userId;
-  const why = crown.rating
-    ? `Their highest-rated favorite (${crown.rating}★)`
-    : 'Their most recent favorite';
+  if (titles.length === 0 && !owner) return null;
+
+  const [crown, ...supports] = titles;
+  const why = picked
+    ? 'Their #1 pick'
+    : crown?.rating
+      ? `Their highest-rated favorite (${crown.rating}★)`
+      : 'Their most recent favorite';
   const open = (t: InsightTitle, position: number) => () =>
     trackProfile(pid, 'title_opened', `${t.mediaType}:${t.tmdbId}`, { section: 'feature', position });
 
   return (
     <section>
       <SectionTitle
-        action={owner ? <span className="text-xs text-muted-foreground">Ranked by your ratings · pinning soon</span> : undefined}
+        action={
+          owner ? (
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              {picked ? 'Picked by you' : 'Ranked by your ratings'}
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-foreground hover:bg-secondary cursor-pointer"
+              >
+                <Pencil className="h-3 w-3" /> {picked ? 'Edit' : 'Pick titles'}
+              </button>
+            </span>
+          ) : undefined
+        }
       >
         Feature presentation
       </SectionTitle>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-        <div className="flex flex-col items-center gap-1">
-          <Crown className="h-5 w-5 text-primary" aria-label={why}>
-            <title>{why}</title>
-          </Crown>
-          <Poster t={crown} className="h-64 w-44 shadow-elevation-card" onOpen={open(crown, 1)} />
-          <span className="max-w-44 truncate text-sm font-semibold">{crown.title}</span>
+      {!crown ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="w-full rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          Pick up to 6 titles from your favorites and watchlists to headline your profile.
+        </button>
+      ) : (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+          <div className="flex flex-col items-center gap-1">
+            <Crown className="h-5 w-5 text-primary" aria-label={why}>
+              <title>{why}</title>
+            </Crown>
+            <Poster t={crown} className="h-64 w-44 shadow-elevation-card" onOpen={open(crown, 1)} />
+            <span className="max-w-44 truncate text-sm font-semibold">{crown.title}</span>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {supports.map((t, i) => (
+              <div key={`${t.mediaType}:${t.tmdbId}`} className="flex flex-col gap-1">
+                <Poster t={t} className="h-44 w-28" onOpen={open(t, i + 2)} />
+                <span className="max-w-28 truncate text-xs text-muted-foreground">{t.title}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-3">
-          {supports.map((t, i) => (
-            <div key={`${t.mediaType}:${t.tmdbId}`} className="flex flex-col gap-1">
-              <Poster t={t} className="h-44 w-28" onOpen={open(t, i + 2)} />
-              <span className="max-w-28 truncate text-xs text-muted-foreground">{t.title}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
+      {editing && (
+        <FeaturePicker
+          initial={featured}
+          onClose={() => setEditing(false)}
+          onSaved={(next) => {
+            setFeatured(next);
+            // The member card's "Their #1" follows the first pick.
+            router.refresh();
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -560,11 +597,12 @@ function Programmes({ showcase, onOpenLibrary }: { showcase: ProfileShowcase; on
       >
         Programmes
       </SectionTitle>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Same cover cards as the Watchlists page (read-only here). */}
+      <ul className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3">
         {lists.map((w) => (
-          <WatchlistCard key={w.id} watchlist={w} quickLook />
+          <WatchlistCoverCard key={w.id} list={w} />
         ))}
-      </div>
+      </ul>
     </section>
   );
 }
@@ -630,15 +668,36 @@ function ByTheNumbers({ showcase }: { showcase: ProfileShowcase }) {
     });
   }
   if (insights.reviews.count > 0) {
+    // The featured (best-rated written) review, shown like Coming soon: its
+    // title's backdrop behind, poster + quote along the bottom.
+    const top = insights.reviews.top;
     frames.push({
       key: 'voice',
       label: 'Review voice',
+      background: top ? (top.title.backdropPath ?? top.title.posterPath) : undefined,
       node: (
         <>
         <p className="text-3xl font-bold">
           {insights.reviews.average}★ <span className="text-base font-normal text-muted-foreground">avg of {insights.reviews.count}</span>
         </p>
-        {insights.reviews.top && <p className="mt-1 line-clamp-2 text-sm italic">&ldquo;{insights.reviews.top.body}&rdquo;</p>}
+        {top && (
+          <div className="mt-auto flex items-end gap-3 pt-6">
+            <Poster t={top.title} className="h-20 w-14 shrink-0 shadow-lg" sizes="56px" />
+            <div className="min-w-0">
+              <p className="line-clamp-2 text-sm italic">&ldquo;{top.body}&rdquo;</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                <QuickViewLink
+                  mediaType={top.title.mediaType}
+                  titleId={top.title.tmdbId}
+                  className="font-semibold text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
+                >
+                  {top.title.title}
+                </QuickViewLink>
+                {top.title.year ? ` · ${top.title.year}` : ''} · {top.rating}★
+              </p>
+            </div>
+          </div>
+        )}
         </>
       ),
     });
@@ -698,7 +757,13 @@ function ByTheNumbers({ showcase }: { showcase: ProfileShowcase }) {
         <div className="mt-auto flex items-end gap-3 pt-6">
           <Poster t={t} className="h-20 w-14 shrink-0 shadow-lg" sizes="56px" />
           <div className="min-w-0">
-            <p className="line-clamp-2 font-semibold leading-tight">{t.title}</p>
+            <QuickViewLink
+              mediaType={t.mediaType}
+              titleId={t.tmdbId}
+              className="line-clamp-2 font-semibold leading-tight transition-colors hover:text-primary hover:underline underline-offset-4"
+            >
+              {t.title}
+            </QuickViewLink>
             <p className="text-xs text-muted-foreground">{t.year ? `${t.year} · ` : ""}Up next</p>
           </div>
         </div>
@@ -815,91 +880,151 @@ function Frame({
 // Library · Reviews tabs
 // ---------------------------------------------------------------------------
 
-type Shelf = 'watchlists' | 'favorites' | 'watched';
+type ProfileReview = Awaited<ReturnType<typeof getProfileReviewsAction>>['items'][number];
 
-function Library({ showcase }: { showcase: ProfileShowcase }) {
-  const [shelf, setShelf] = useState<Shelf>('watchlists');
-  const { overview } = showcase;
-  const pid = overview.profile.userId;
-  const favorites = rankedFavorites(showcase, 24);
+function Stars({ rating }: { rating: number }) {
   return (
-    <div className="flex flex-col gap-4">
-      <div role="radiogroup" aria-label="Library shelf" className="flex w-fit gap-1 rounded-lg bg-secondary p-1">
-        {(['watchlists', 'favorites', 'watched'] as Shelf[]).map((s) => (
-          <button
-            key={s}
-            type="button"
-            role="radio"
-            aria-checked={shelf === s}
-            onClick={() => {
-              setShelf(s);
-              trackProfile(pid, 'section_opened', undefined, { section: `library_${s}` });
-            }}
-            className={cn('rounded-md px-3 py-1.5 text-sm font-medium capitalize cursor-pointer', shelf === s ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-      {shelf === 'watchlists' &&
-        (overview.publicWatchlists.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {overview.publicWatchlists.map((w) => (
-              <WatchlistCard key={w.id} watchlist={w} quickLook />
-            ))}
-          </div>
-        ) : (
-          <Empty text="No public watchlists yet." />
-        ))}
-      {shelf === 'favorites' &&
-        (overview.favoritesHidden ? (
-          <Empty text="Favorites are private." />
-        ) : favorites.length ? (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
-            {favorites.map((t) => (
-              <Poster key={`${t.mediaType}:${t.tmdbId}`} t={t} className="aspect-2/3 w-full" />
-            ))}
-          </div>
-        ) : (
-          <Empty text="No favorites yet." />
-        ))}
-      {shelf === 'watched' &&
-        (overview.watchedHidden ? (
-          <Empty text="Watched list is private." />
-        ) : overview.watchedTitles.length ? (
-          <p className="text-sm text-muted-foreground">
-            {overview.profile.stats.watchedCount} watched — the ticket-stub archive would live here.
-          </p>
-        ) : (
-          <Empty text="Nothing marked watched yet." />
-        ))}
-    </div>
+    <span className="flex items-center gap-0.5" aria-label={`${rating} out of 5 stars`}>
+      {Array.from({ length: Math.floor(rating) }).map((_, i) => (
+        <Star key={i} className="h-3.5 w-3.5 fill-primary text-primary" />
+      ))}
+      {rating % 1 !== 0 && <StarHalf className="h-3.5 w-3.5 fill-primary text-primary" />}
+    </span>
   );
 }
 
-function Reviews({ showcase }: { showcase: ProfileShowcase }) {
+/** Every review, newest first, a page at a time (loaded when the tab opens). */
+function Reviews({ showcase, preview }: { showcase: ProfileShowcase; preview: boolean }) {
   const r = showcase.insights.reviews;
+  const username = showcase.overview.profile.username;
+  const [items, setItems] = useState<ProfileReview[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const load = async (offset: number) => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const page = await getProfileReviewsAction(username, { asGuest: preview, offset });
+      setItems((cur) => (offset === 0 ? page.items : [...(cur ?? []), ...page.items]));
+      setHasMore(page.hasMore);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (r.count === 0) return;
+    let cancelled = false;
+    getProfileReviewsAction(username, { asGuest: preview })
+      .then((page) => {
+        if (cancelled) return;
+        setItems(page.items);
+        setHasMore(page.hasMore);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [username, preview, r.count]);
+
   if (r.count === 0) return <Empty text="No reviews yet." />;
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        <strong className="text-foreground">{r.count}</strong> reviews · average <strong className="text-foreground">{r.average}★</strong>
+        <strong className="text-foreground">{r.count}</strong> {r.count === 1 ? 'review' : 'reviews'} · average{' '}
+        <strong className="text-foreground">{r.average}★</strong>
       </p>
-      {r.top && (
-        <figure className="flex gap-4 rounded-xl border border-border bg-card p-4">
-          <Poster t={r.top.title} className="h-24 w-16" sizes="64px" />
-          <div>
-            <p className="flex items-center gap-1 text-sm">
-              {Array.from({ length: r.top.rating }).map((_, i) => (
-                <Star key={i} className="h-3.5 w-3.5 fill-primary text-primary" />
-              ))}
-              <span className="ml-1 font-medium">{r.top.title.title}</span>
-            </p>
-            <blockquote className="mt-1 text-sm italic">&ldquo;{r.top.body}&rdquo;</blockquote>
-          </div>
-        </figure>
+      {items === null && !failed && (
+        <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading reviews">
+          {Array.from({ length: Math.min(r.count, 3) }).map((_, i) => (
+            <div key={i} className="h-28 rounded-xl border border-border bg-card animate-pulse" />
+          ))}
+        </div>
+      )}
+      {items && (
+        <ul className="flex flex-col gap-3">
+          {items.map((rev) => (
+            <ReviewRow key={rev.id} review={rev} />
+          ))}
+        </ul>
+      )}
+      {failed && (
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load reviews.{' '}
+          <button type="button" onClick={() => void load(items?.length ?? 0)} className="text-primary hover:underline cursor-pointer">
+            Try again
+          </button>
+        </p>
+      )}
+      {items && hasMore && !failed && (
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load(items.length)}
+          className="self-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/5 disabled:opacity-60 cursor-pointer"
+        >
+          {loading ? 'Loading…' : 'Show more reviews'}
+        </button>
       )}
     </div>
+  );
+}
+
+function ReviewRow({ review }: { review: ProfileReview }) {
+  const [open, setOpen] = useState(false);
+  const poster = buildImageUrl(review.posterPath, 'w185');
+  const long = (review.body?.length ?? 0) > 280;
+  const edited = review.updatedAt !== review.createdAt;
+  return (
+    <li className="flex gap-4 rounded-xl border border-border bg-card p-4">
+      <QuickViewLink
+        mediaType={review.titleType}
+        titleId={review.titleId}
+        className="relative h-24 w-16 shrink-0 overflow-hidden rounded-md bg-muted"
+        aria-label={review.title || 'Open title'}
+      >
+        {poster && <Image src={poster} alt="" fill sizes="64px" className="object-cover" />}
+      </QuickViewLink>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <QuickViewLink mediaType={review.titleType} titleId={review.titleId} className="font-medium hover:text-primary">
+            {review.title || 'Unknown title'}
+          </QuickViewLink>
+          {review.year && <span className="text-xs text-muted-foreground">{review.year}</span>}
+        </div>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <Stars rating={review.rating} />
+          <span>
+            {formatRelativeAgo(review.updatedAt)}
+            {edited && ' · edited'}
+          </span>
+        </div>
+        {review.body ? (
+          <>
+            <div className="mt-2">
+              {review.isSpoiler && !open ? (
+                <SpoilerText text={review.body} isSpoiler className="text-sm" clampClassName="line-clamp-4" />
+              ) : (
+                <blockquote className={cn('whitespace-pre-line text-sm', !open && 'line-clamp-4')}>{review.body}</blockquote>
+              )}
+            </div>
+            {long && !review.isSpoiler && (
+              <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 text-xs text-primary hover:underline cursor-pointer">
+                {open ? 'Show less' : 'Read more'}
+              </button>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-muted-foreground">Rated, no written review.</p>
+        )}
+      </div>
+    </li>
   );
 }
 

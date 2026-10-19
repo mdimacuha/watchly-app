@@ -14,6 +14,7 @@ import { formatRelativeAgo } from '@/lib/format';
 import { getWatchedKeySet } from '@/services/watched';
 import { getSelectedProviders } from '@/services/preferences/forYouPrefs';
 import { mapWithConcurrency } from '@/lib/concurrency';
+import { getJustWatchOffers } from '@/services/justwatch';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -43,6 +44,11 @@ export interface ForYouCandidate {
   subtitle?: string;
   /** Streaming providers in the user's region (flatrate only). */
   providers: ForYouProvider[];
+  /**
+   * True when availability was looked up and the title has no offers in the
+   * user's region (card shows "Not in your region"). Unset = not fetched.
+   */
+  availabilityChecked?: true;
 }
 
 export type ForYouRowId =
@@ -708,7 +714,16 @@ interface TmdbProviderRow {
 }
 
 interface TmdbWatchProviders {
-  results?: Record<string, { flatrate?: TmdbProviderRow[] }>;
+  results?: Record<
+    string,
+    {
+      flatrate?: TmdbProviderRow[];
+      ads?: TmdbProviderRow[];
+      free?: TmdbProviderRow[];
+      rent?: TmdbProviderRow[];
+      buy?: TmdbProviderRow[];
+    }
+  >;
 }
 
 interface TmdbDetailsFull {
@@ -780,7 +795,29 @@ export async function enrichCandidate(
         ? `Because you liked ${c.topSeed.title}`
         : 'Recommended for you';
 
-    const providers = pickRegionFlatrate(raw['watch/providers'], region);
+    let providers = pickRegionFlatrate(raw['watch/providers'], region);
+    let availabilityChecked = false;
+    // TMDB has no offers of any kind here: ask JustWatch for the same region
+    // (never another country). Rent/buy-only titles get no pill either way.
+    if (!hasAnyRegionOffer(raw['watch/providers'], region) && title) {
+      const fallback = await getJustWatchOffers({
+        tmdbId: c.tmdbId,
+        mediaType: c.mediaType,
+        title,
+        year,
+        region,
+      });
+      providers = (fallback?.providers.streaming ?? []).map((p) => ({
+        providerId: p.provider_id,
+        providerName: p.provider_name,
+        logoPath: p.logo_path,
+      }));
+      availabilityChecked =
+        !fallback ||
+        (fallback.providers.streaming.length === 0 &&
+          fallback.providers.rent.length === 0 &&
+          fallback.providers.buy.length === 0);
+    }
 
     const ui: ForYouCandidate = {
       tmdbId: c.tmdbId,
@@ -795,6 +832,7 @@ export async function enrichCandidate(
       genres: (raw.genres ?? []).map((g) => g.name),
       reason,
       providers,
+      ...(availabilityChecked ? { availabilityChecked: true as const } : {}),
     };
 
     const features: CandidateFeatures = {
@@ -833,6 +871,15 @@ function pickRegionFlatrate(
     });
   }
   return out;
+}
+
+function hasAnyRegionOffer(
+  block: TmdbWatchProviders | undefined,
+  region: string,
+): boolean {
+  const r = block?.results?.[region];
+  if (!r) return false;
+  return [r.flatrate, r.ads, r.free, r.rent, r.buy].some((l) => (l?.length ?? 0) > 0);
 }
 
 // ---------------------------------------------------------------------------

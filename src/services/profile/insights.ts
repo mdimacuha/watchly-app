@@ -100,7 +100,8 @@ export async function getProfileInsights(
         body: userReviews.body,
       })
       .from(userReviews)
-      .where(eq(userReviews.userId, ownerId))
+      // The featured quote shows on the profile unblurred: no spoilers.
+      .where(and(eq(userReviews.userId, ownerId), eq(userReviews.isSpoiler, false)))
       .orderBy(desc(userReviews.rating), desc(userReviews.createdAt))
       .limit(5),
     db

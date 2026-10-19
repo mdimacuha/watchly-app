@@ -15,5 +15,5 @@ export async function setBannerEnabledAction(enabled: boolean): Promise<void> {
     .set({ bannerEnabled: enabled, updatedAt: new Date() })
     .where(eq(userProfiles.userId, session.userId));
   revalidatePath('/me');
-  revalidatePath('/settings/appearance');
+  revalidatePath('/settings');
 }

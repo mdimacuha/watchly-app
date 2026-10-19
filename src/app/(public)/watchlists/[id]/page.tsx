@@ -3,8 +3,7 @@ import { notFound } from 'next/navigation';
 import { getEnrichedWatchlistAction } from '@/actions/watchlists';
 import { WatchlistDetailClient } from '@/components/watchlists/WatchlistDetailClient';
 import { AccentScope } from '@/components/profile/AccentScope';
-import type { AccentSlug } from '@/constants/accentColors';
-import { ACCENT_SLUGS } from '@/constants/accentColors';
+import { normalizeAccentColor } from '@/constants/accentColors';
 
 // Viewer-gated (public/private) + noindex: must render per-request and never be
 // statically cached. Explicit now that the (public) layout no longer forces it
@@ -39,11 +38,6 @@ export async function generateMetadata({
   };
 }
 
-function asAccentSlug(v: string | null | undefined): AccentSlug | null {
-  return v && (ACCENT_SLUGS as readonly string[]).includes(v)
-    ? (v as AccentSlug)
-    : null;
-}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -65,7 +59,7 @@ export default async function WatchlistDetailPage({ params }: PageProps) {
   const { watchlist, items, isOwner, owner } = payload;
   return (
     <AccentScope
-      accentColor={asAccentSlug(owner.accentColor)}
+      accentColor={normalizeAccentColor(owner.accentColor)}
       className="px-8 py-10"
     >
       <WatchlistDetailClient

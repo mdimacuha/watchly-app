@@ -1,0 +1,1 @@
+ALTER TABLE "user_profiles" ADD COLUMN "featured_titles" jsonb DEFAULT '[]'::jsonb NOT NULL;

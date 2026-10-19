@@ -28,6 +28,8 @@ export type ReviewTitleType = 'movie' | 'tv';
 export interface ReviewInput {
   rating: number;
   body?: string | null;
+  /** The written review gives things away; readers see it hidden at first. */
+  isSpoiler?: boolean;
 }
 
 export interface UserReview {
@@ -37,6 +39,8 @@ export interface UserReview {
   rating: number;
   /** null when the user left a rating only. */
   body: string | null;
+  /** Only ever true when there is a body. */
+  isSpoiler: boolean;
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }
@@ -54,7 +58,8 @@ export interface ReviewAggregate {
 const titleTypeSchema = z.enum(['movie', 'tv']);
 
 const reviewInputSchema = z.object({
-  rating: z.number().int().min(1).max(5),
+  // Half-star steps: 0.5, 1, 1.5 … 5.
+  rating: z.number().min(0.5).max(5).multipleOf(0.5),
   body: z
     .string()
     .max(REVIEW_BODY_MAX_LENGTH)
@@ -67,6 +72,7 @@ const reviewInputSchema = z.object({
       const trimmed = v.trim();
       return trimmed.length === 0 ? null : trimmed;
     }),
+  isSpoiler: z.boolean().optional().default(false),
 });
 
 function parseTitleType(titleType: string): ReviewTitleType {
@@ -87,6 +93,7 @@ interface ReviewRow {
   titleType: string;
   rating: number;
   body: string | null;
+  isSpoiler: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -97,6 +104,7 @@ const reviewColumns = {
   titleType: userReviews.titleType,
   rating: userReviews.rating,
   body: userReviews.body,
+  isSpoiler: userReviews.isSpoiler,
   createdAt: userReviews.createdAt,
   updatedAt: userReviews.updatedAt,
 } as const;
@@ -108,6 +116,7 @@ function mapReview(row: ReviewRow): UserReview {
     titleType: row.titleType === 'tv' ? 'tv' : 'movie',
     rating: row.rating,
     body: row.body,
+    isSpoiler: row.body ? row.isSpoiler : false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -140,6 +149,8 @@ export async function upsertReview(
     throw new ValidationAppError('Invalid review', parsed.error.flatten());
   }
   const { rating, body } = parsed.data;
+  // A rating alone has nothing to spoil.
+  const isSpoiler = body ? parsed.data.isSpoiler : false;
 
   if (body) {
     const verdict = moderateText(body, {
@@ -177,6 +188,7 @@ export async function upsertReview(
       titleType: type,
       rating,
       body,
+      isSpoiler,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -188,6 +200,7 @@ export async function upsertReview(
       set: {
         rating,
         body,
+        isSpoiler,
         updatedAt: now,
       },
     })
@@ -315,6 +328,7 @@ export interface TitleReview {
   rating: number;
   /** Always present — this list only includes reviews with written text. */
   body: string;
+  isSpoiler: boolean;
   createdAt: string; // ISO
   updatedAt: string; // ISO
   author: ReviewAuthor;
@@ -356,6 +370,7 @@ export async function getTitleReviews(
       id: userReviews.id,
       rating: userReviews.rating,
       body: userReviews.body,
+      isSpoiler: userReviews.isSpoiler,
       createdAt: userReviews.createdAt,
       updatedAt: userReviews.updatedAt,
       username: users.username,
@@ -376,6 +391,7 @@ export async function getTitleReviews(
     id: r.id,
     rating: r.rating,
     body: r.body ?? '',
+    isSpoiler: r.isSpoiler,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     author: {
@@ -396,7 +412,7 @@ export async function getTitleReviews(
  */
 export async function getUserReviews(
   userId: string,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; offset?: number } = {},
 ): Promise<EnrichedReview[]> {
   const limit = Math.min(
     Math.max(opts.limit ?? REVIEWS_LIST_DEFAULT_LIMIT, 1),
@@ -407,8 +423,9 @@ export async function getUserReviews(
     .select(reviewColumns)
     .from(userReviews)
     .where(eq(userReviews.userId, userId))
-    .orderBy(desc(userReviews.updatedAt))
-    .limit(limit);
+    .orderBy(desc(userReviews.updatedAt), desc(userReviews.id))
+    .limit(limit)
+    .offset(Math.max(opts.offset ?? 0, 0));
 
   return mapWithConcurrency(rows, 6, async (r) => {
     const review = mapReview(r);

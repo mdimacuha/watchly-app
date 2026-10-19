@@ -168,13 +168,26 @@ export function WatchlistDetailClient({
     return acc;
   }, [items]);
 
+  // "Hide unranked" (?ranked=1): only titles with a rank. Shareable like ?sort.
+  const hideUnranked = searchParams.get('ranked') === '1';
+  const setHideUnranked = (next: boolean) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set('ranked', '1');
+    else params.delete('ranked');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  const unrankedCount = useMemo(() => items.filter((i) => !i.rankedAt).length, [items]);
+
   const filteredItems = useMemo(
     () =>
-      statusFilter === 'all'
-        ? items
-        : items.filter((i) => i.status === statusFilter),
-    [items, statusFilter],
+      items.filter(
+        (i) => (statusFilter === 'all' || i.status === statusFilter) && (!hideUnranked || i.rankedAt),
+      ),
+    [items, statusFilter, hideUnranked],
   );
+  // Drag-to-rank needs the whole list: a partial one would misplace moves.
+  const canDrag = statusFilter === 'all' && !hideUnranked;
 
   // List sort (owner-only control): "rank" = curator's order (sortOrder),
   // "auto" = Watchly's auto sort by status priority. Viewers always get rank.
@@ -526,6 +539,9 @@ export function WatchlistDetailClient({
               </span>
             )}
             <div className="flex flex-wrap items-center gap-2">
+              {viewMode !== 'board' && unrankedCount > 0 && unrankedCount < items.length && (
+                <HideUnrankedSwitch on={hideUnranked} count={unrankedCount} onChange={setHideUnranked} />
+              )}
               {viewMode === 'list' && isOwner && (
                 <ListSortToggle listSort={listSort} onChange={setListSort} />
               )}
@@ -550,7 +566,7 @@ export function WatchlistDetailClient({
             listSort === 'rank' &&
             isOwner &&
             mounted &&
-            statusFilter === 'all' ? (
+            canDrag ? (
             // Drag-to-rank: same rules as the grid (owner, unfiltered) and
             // the same handleDragEnd → reorderWatchlistItemsAction.
             <DndContext
@@ -609,7 +625,7 @@ export function WatchlistDetailClient({
                 </motion.li>
               ))}
             </ol>
-          ) : isOwner && mounted && statusFilter === 'all' ? (
+          ) : isOwner && mounted && canDrag ? (
             // DnD is only enabled in the unfiltered view — reordering a
             // filtered subset against an unfiltered sortOrder array would
             // produce surprising results.
@@ -805,6 +821,26 @@ function ViewToggle({ viewMode, onChange }: ViewToggleProps) {
         Board
       </ToggleButton>
     </div>
+  );
+}
+
+/** Pill switch: hide titles that haven't been given a rank yet. */
+function HideUnrankedSwitch({ on, count, onChange }: { on: boolean; count: number; onChange: (next: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      title={on ? `Showing ranked titles only (${count} unranked hidden)` : `Hide the ${count} titles without a rank`}
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-card py-1 pl-1.5 pr-3 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className={cn('relative h-4 w-7 shrink-0 rounded-full transition-colors', on ? 'bg-primary' : 'bg-muted-foreground/35')}>
+        <span className={cn('absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform', on && 'translate-x-3')} />
+      </span>
+      <span className={cn(on && 'text-foreground')}>Hide unranked</span>
+      <span className="tabular-nums text-muted-foreground">{count}</span>
+    </button>
   );
 }
 

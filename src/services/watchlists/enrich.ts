@@ -19,6 +19,11 @@ type CommonFields = {
   addedAt: string;
   runtime: number | null;
   provider: WatchProviderSummary | null;
+  /**
+   * True once providers were resolved for the viewer's region. With a null
+   * `provider` the card shows "Not in your region".
+   */
+  availabilityChecked: boolean;
   isFavorite: boolean;
   status: WatchlistItemStatus;
   /** ISO when the user first set status to watching/rewatch. */
@@ -64,7 +69,7 @@ interface WatchProvidersResponse {
   >;
 }
 
-// Strict: looks at one region only. The three-tier fallback chain lives in
+// Strict: looks at one region only. The fallback chain lives in
 // resolveProvider below — this stays single-purpose so the chain stays clear.
 function pickFromRegion(
   watchProviders: WatchProvidersResponse | undefined,
@@ -89,13 +94,11 @@ function pickFromRegion(
 }
 
 /**
- * Three-tier provider resolution for a watchlist item, mirroring the same
- * chain used on /title and search cards:
+ * Provider resolution for a watchlist item, mirroring the chain used on
+ * search cards — user's region only, never another country:
  *   1. TMDB user region
  *   2. JustWatch (user region) — covers titles TMDB hasn't ingested for
- *      smaller regions, e.g. Lost in PH → Disney+ instead of US Hulu
- *   3. TMDB US — silent last-resort so titles JustWatch doesn't index still
- *      get a badge
+ *      smaller regions, e.g. Lost in PH → Disney+
  */
 async function resolveProvider(opts: {
   watchProviders: WatchProvidersResponse | undefined;
@@ -126,13 +129,11 @@ async function resolveProvider(opts: {
         };
       }
     } catch {
-      // JustWatch failures are non-fatal — fall through to US fallback.
+      // JustWatch failures are non-fatal — treat as no provider.
     }
   }
 
-  if (opts.region !== 'US') {
-    return pickFromRegion(opts.watchProviders, 'US');
-  }
+  // No fallback to another country: null means "not in your region".
   return null;
 }
 
@@ -174,6 +175,7 @@ export async function enrichWatchlistItems(
           addedAt: it.createdAt.toISOString(),
           runtime: details.runtime ?? null,
           provider,
+          availabilityChecked: true,
           isFavorite: isFav,
           status: it.status,
           startedAt: it.startedAt?.toISOString() ?? null,
@@ -208,6 +210,7 @@ export async function enrichWatchlistItems(
         addedAt: it.createdAt.toISOString(),
         runtime,
         provider,
+        availabilityChecked: true,
         isFavorite: isFav,
         status: it.status,
         startedAt: it.startedAt?.toISOString() ?? null,

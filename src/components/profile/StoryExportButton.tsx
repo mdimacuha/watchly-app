@@ -8,7 +8,7 @@ import { SkeletonBox } from '@/components/watchly/skeletons';
 import { useToast } from '@/hooks/useToast';
 import { trackProfile } from '@/client/profileEvents';
 import { AccentScope } from '@/components/profile/AccentScope';
-import type { AccentSlug } from '@/constants/accentColors';
+import type { AccentColor } from '@/constants/accentColors';
 
 const STORY_ENDPOINT = '/api/me/profile/story';
 
@@ -28,7 +28,7 @@ export function StoryExportButton({
 }: {
   userId: string;
   username: string;
-  accent: AccentSlug | null;
+  accent: AccentColor | null;
   className: string;
 }) {
   const [open, setOpen] = useState(false);

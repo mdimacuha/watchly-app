@@ -8,17 +8,14 @@ import { clampDescription } from "@/lib/seo";
 
 // Region-agnostic + no per-user reads → ISR-cacheable (same pattern as the
 // title page). Favorite state loads client-side (FavoriteButton fetchInitial).
-// The filmography availability badges use a fixed default region so the page
-// can be shared-cached; accurate per-region availability lives on each title
-// page. See docs/vercel-perf-roadmap.md.
+// Filmography availability badges load client-side for the visitor's region
+// (useRegionBadges), so no one country is baked into the cached HTML.
+// See docs/vercel-perf-roadmap.md.
 // 24h — cached HTML is TMDB catalog metadata only, which does not change hourly.
 export const revalidate = 86400;
 export async function generateStaticParams() {
   return [];
 }
-
-// Default region for the (cached) filmography availability badges.
-const DEFAULT_BADGE_REGION = "US";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -73,7 +70,7 @@ export default async function ArtistPage({ params }: PageProps) {
   // and make a valid cast link look broken — surface it as an error instead.
   let payload;
   try {
-    payload = await getPersonPagePayload(id, DEFAULT_BADGE_REGION);
+    payload = await getPersonPagePayload(id);
   } catch (e) {
     if (e instanceof TmdbError && e.status === 404) notFound();
     throw e;

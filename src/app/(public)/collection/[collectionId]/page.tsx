@@ -1,15 +1,14 @@
 import type { Metadata } from 'next';
 import { getCollectionDetails } from '@/services/tmdb/collection';
 import Image from 'next/image';
-import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { buildImageUrl } from '@/lib/tmdb';
 import { notFound } from 'next/navigation';
-import { PosterCard } from '@/components/watchly/PosterCard';
 import { BackLink } from '@/components/nav/BackLink';
 import { getCollectionMeta } from '@/services/tmdb/meta';
 import { clampDescription } from '@/lib/seo';
 
 import { CollectionActions } from '@/components/collections/CollectionActions';
+import { CollectionPartsGrid } from '@/components/collections/CollectionPartsGrid';
 
 // Region-agnostic + no per-user reads → ISR-cacheable (same pattern as the
 // title page). Favorite state loads client-side (FavoriteButton fetchInitial).
@@ -21,8 +20,6 @@ export async function generateStaticParams() {
   return [];
 }
 
-// Default region for the (cached) per-part availability badges.
-const DEFAULT_BADGE_REGION = 'US';
 
 export async function generateMetadata({
   params,
@@ -77,7 +74,9 @@ export default async function CollectionPage({
 
   let collection;
   try {
-    collection = await getCollectionDetails(collectionId, DEFAULT_BADGE_REGION);
+    // No region: the cached HTML carries no badges; the grid loads them for
+    // the visitor's region client-side (CollectionPartsGrid).
+    collection = await getCollectionDetails(collectionId);
   } catch {
     notFound();
   }
@@ -119,21 +118,7 @@ export default async function CollectionPage({
 
       <div className="container mx-auto px-4 md:px-6 mt-8">
         <h2 className="text-xl font-bold mb-6">Collection Parts</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          {collection.parts.map(part => (
-            <QuickViewLink key={part.id} mediaType="movie" titleId={part.id}>
-              <PosterCard
-                title={part.title}
-                year={part.releaseDate ? part.releaseDate.split('-')[0] : ''}
-                genre="Movie"
-                imageSrc={buildImageUrl(part.posterPath, 'w500') || ''}
-                className="w-full max-w-none"
-                mediaType="movie"
-                availability={part.providerBadges}
-              />
-            </QuickViewLink>
-          ))}
-        </div>
+        <CollectionPartsGrid parts={collection.parts} />
       </div>
     </div>
   );

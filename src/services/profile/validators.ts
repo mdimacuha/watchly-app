@@ -1,8 +1,17 @@
 import { z } from 'zod';
-import { ACCENT_SLUGS } from '@/constants/accentColors';
+import { ACCENT_SLUGS, normalizeAccentHex, type AccentColor } from '@/constants/accentColors';
 import { CARD_FEATURE_LABEL_SLUGS, CARD_FEATURE_MODES } from '@/constants/cardFeature';
 
-export const accentColorSchema = z.enum(ACCENT_SLUGS).nullable();
+/** A preset slug, or a custom hex (normalized: #RRGGBB, lightness kept readable). */
+export const accentColorSchema = z
+  .union([
+    z.enum(ACCENT_SLUGS),
+    z
+      .string()
+      .regex(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/i, 'Use a hex colour like #E4572E')
+      .transform((v) => normalizeAccentHex(v) as AccentColor),
+  ])
+  .nullable();
 
 /** Profile card highlight. `custom` must name a title + a label preset. */
 export const cardFeatureSchema = z

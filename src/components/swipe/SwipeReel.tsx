@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Film, Heart, RotateCcw, ThumbsUp, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import type { SwipeDeckItem } from '@/services/swipe';
 
 export type ReelVerdict = 'liked' | 'passed' | 'saved';
@@ -80,6 +81,7 @@ export function SwipeReel({ frames, canUndo, onUndo, onOpen, remaining }: SwipeR
       <div className="relative rounded-md bg-black py-3">
         <Sprockets className="top-0.5" />
         <Sprockets className="bottom-0.5" />
+        <ArrowStrip label="swiped titles">
         <ol className="no-scrollbar flex gap-2 overflow-x-auto px-3">
           {visible.length === 0 && (
             <li className="flex h-28 w-full items-center justify-center text-xs text-white/60">
@@ -120,6 +122,7 @@ export function SwipeReel({ frames, canUndo, onUndo, onOpen, remaining }: SwipeR
             })}
           </AnimatePresence>
         </ol>
+        </ArrowStrip>
       </div>
 
       {newest && (

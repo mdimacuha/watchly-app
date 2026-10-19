@@ -16,8 +16,9 @@ import { sendVerificationEmail, sendWelcomeEmail } from '@/services/auth/emailFl
 import { logger } from '@/lib/log';
 import { validateUsername } from '@/services/moderation/validateUsername';
 import { moderateText } from '@/services/moderation/contentModeration';
+import { sessionUserAgent } from '@/services/auth/signin';
 
-export async function signUp(input: SignUpInput) {
+export async function signUp(input: SignUpInput, opts: { userAgent?: string | null } = {}) {
   const inputData = signUpSchema.parse(input);
 
   // Strict username pipeline: format → reserved → profanity / racial
@@ -117,6 +118,7 @@ export async function signUp(input: SignUpInput) {
       userId: user.id,
       sessionToken,
       expiresAt: sessionExpiresAt,
+      userAgent: sessionUserAgent(opts.userAgent),
     });
 
     await tx.insert(watchlists).values({

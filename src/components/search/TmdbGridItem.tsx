@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { buildImageUrl } from '@/lib/tmdb';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 import { cleanProviderName } from '@/utils/providers';
 
 interface TmdbGridItemProps {
@@ -25,6 +26,8 @@ export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
   const cleanedBadges = dedupeBadges(item.providerBadges);
   const visible = cleanedBadges.slice(0, MAX_VISIBLE_BADGES);
   const overflow = Math.max(0, cleanedBadges.length - MAX_VISIBLE_BADGES);
+  // Only when providers were actually looked up for the user's region.
+  const notInRegion = item.availabilityChecked === true && visible.length === 0;
 
   return (
     <QuickViewLink
@@ -61,7 +64,7 @@ export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
         </div>
 
         {/* Provider strip — slides up from the bottom of the poster on hover. */}
-        {visible.length > 0 && (
+        {(visible.length > 0 || notInRegion) && (
           <div
             className={cn(
               'absolute inset-x-0 bottom-0 pointer-events-none',
@@ -85,6 +88,7 @@ export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
                   +{overflow}
                 </span>
               )}
+              {notInRegion && <NotInRegionPill className="text-[9px]" />}
             </div>
           </div>
         )}

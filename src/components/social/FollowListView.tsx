@@ -4,6 +4,7 @@ import { BackLink } from '@/components/nav/BackLink';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { getPublicProfileByUsername } from '@/services/profile';
+import { getActiveUserRowByUsername } from '@/services/users/rows';
 import {
   getFollowListExtras,
   getFollowStatesBulk,
@@ -26,25 +27,23 @@ export type FollowListKind = 'followers' | 'following';
  * getPublicProfileByUsername (private / followers-only / blocked).
  */
 export async function FollowListView({ username, kind }: { username: string; kind: FollowListKind }) {
-  const session = await getSession();
+  const [session, owner] = await Promise.all([getSession(), getActiveUserRowByUsername(username)]);
   const viewerId = session?.userId ?? null;
+  if (!owner) notFound();
 
-  let profile;
-  try {
-    profile = await getPublicProfileByUsername(username, viewerId);
-  } catch {
-    notFound();
-  }
-
-  const [users, summary] = await Promise.all([
-    kind === 'followers' ? listFollowers(profile.userId) : listFollowing(profile.userId),
-    getFollowSummary(profile.userId),
+  // The list reads start alongside the visibility check instead of after it;
+  // nothing renders unless getPublicProfileByUsername allows it.
+  const usersP = kind === 'followers' ? listFollowers(owner.id) : listFollowing(owner.id);
+  const [profile, users, summary, [states, extras]] = await Promise.all([
+    getPublicProfileByUsername(username, viewerId).catch(() => null),
+    usersP,
+    getFollowSummary(owner.id),
+    usersP.then((list) => {
+      const ids = list.map((u) => u.id);
+      return Promise.all([getFollowStatesBulk(viewerId, ids), getFollowListExtras(viewerId, ids)] as const);
+    }),
   ]);
-  const ids = users.map((u) => u.id);
-  const [states, extras] = await Promise.all([
-    getFollowStatesBulk(viewerId, ids),
-    getFollowListExtras(viewerId, ids),
-  ]);
+  if (!profile) notFound();
 
   const people: FollowListPerson[] = users.map((u) => {
     const state = states.get(u.id);

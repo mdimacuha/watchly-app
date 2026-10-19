@@ -46,6 +46,16 @@ export const watchlistItemStatusSchema = z.enum([
 
 export type WatchlistItemStatus = z.infer<typeof watchlistItemStatusSchema>;
 
+/**
+ * Statuses that mean "the user has watched this": finished, and rewatch
+ * (you can only rewatch something you've seen). Single source for watched
+ * sets, counts and progress so they can't drift.
+ */
+export const WATCHED_STATUSES = ['finished', 'rewatch'] as const satisfies readonly WatchlistItemStatus[];
+
+export const isWatchedStatus = (s: WatchlistItemStatus): boolean =>
+  (WATCHED_STATUSES as readonly WatchlistItemStatus[]).includes(s);
+
 export const updateItemStatusSchema = z.object({
   itemId: z.string().uuid(),
   status: watchlistItemStatusSchema,

@@ -4,6 +4,7 @@ import { getGenreName } from "@/lib/tmdb-genres";
 import { z } from "zod";
 import { TmdbError } from "@/server/tmdb/errors";
 import { NotFoundAppError, ValidationAppError } from "@/utils/errors";
+import type { BadgeTarget } from "@/services/providers/cardBadges";
 
 export interface PersonDetails {
   id: number;
@@ -18,6 +19,8 @@ export interface PersonDetails {
 
 export interface Credit {
   id: number;
+  /** TMDB credit_id — unique per credit (a person can hold several roles on one title). */
+  creditId: string;
   title: string;
   posterPath: string | null;
   releaseDate: string | null;
@@ -28,7 +31,6 @@ export interface Credit {
   voteAverage: number;
   genreIds: number[];
   genre: string;
-  availability?: { provider_name: string }[];
 }
 
 export interface PersonPagePayload {
@@ -37,6 +39,8 @@ export interface PersonPagePayload {
     cast: Credit[];
     crew: Credit[];
   };
+  /** Credits to badge client-side (40 most popular + 40 most recent), for the visitor's region. */
+  badgeTargets: BadgeTarget[];
 }
 
 interface TmdbPersonDetails {
@@ -52,6 +56,7 @@ interface TmdbPersonDetails {
 
 interface TmdbCombinedCredit {
   id: number;
+  credit_id: string;
   title?: string;
   name?: string;
   poster_path: string | null;
@@ -74,18 +79,12 @@ interface TmdbCombinedCredits {
   crew: TmdbCombinedCredit[];
 }
 
-interface TmdbProviderResult {
-  link: string;
-  flatrate?: { provider_name: string; display_priority?: number }[];
-  rent?: { provider_name: string; display_priority?: number }[];
-  buy?: { provider_name: string; display_priority?: number }[];
-}
-
-interface TmdbWatchProviders {
-  results: Record<string, TmdbProviderResult>;
-}
-
-export async function getPersonPagePayload(id: string, region = "US"): Promise<PersonPagePayload> {
+/**
+ * Artist page payload. Region-agnostic (the page is cached): instead of
+ * badges it returns `badgeTargets` — the credits worth badging — and the page
+ * loads their availability for the visitor's region client-side.
+ */
+export async function getPersonPagePayload(id: string): Promise<PersonPagePayload> {
   const numericId = parseInt(id, 10);
   if (isNaN(numericId)) {
     throw new Error("Invalid ID");
@@ -107,14 +106,20 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
     ...credits.crew.map(c => ({ ...c, creditType: 'crew' }))
   ];
 
-  const topCredits = new Map<string, { id: number; mediaType: "movie" | "tv" }>();
-  
+  const topCredits = new Map<string, BadgeTarget>();
+
   const addToMap = (list: typeof creditsList) => {
     for (const credit of list) {
       if (credit.media_type === "movie" || credit.media_type === "tv") {
         const key = `${credit.media_type}:${credit.id}`;
         if (!topCredits.has(key)) {
-          topCredits.set(key, { id: credit.id, mediaType: credit.media_type });
+          const date = credit.release_date || credit.first_air_date || "";
+          topCredits.set(key, {
+            id: credit.id,
+            mediaType: credit.media_type,
+            title: credit.title || credit.name || "",
+            year: /^\d{4}/.test(date) ? date.slice(0, 4) : null,
+          });
         }
       }
     }
@@ -137,55 +142,8 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
   });
   addToMap(byDate.slice(0, 40));
 
-  // Fetch providers for top credits in parallel
-  const providerPromises = Array.from(topCredits.values()).map(async ({ id, mediaType }) => {
-    try {
-      const data = await tmdbFetch<TmdbWatchProviders>(`/${mediaType}/${id}/watch/providers`, undefined, { cache: { revalidate: 21600 } });
-      const regionData = data.results[region];
-      
-      if (!regionData) return { id, mediaType, providers: [] };
-
-      // Process providers (streaming, rent, buy only for badges)
-      const allOptions = [
-        ...(regionData.flatrate || []),
-        ...(regionData.rent || []),
-        ...(regionData.buy || [])
-      ];
-
-      const seen = new Set<string>();
-      const providers: { provider_name: string; display_priority?: number }[] = [];
-
-      for (const p of allOptions) {
-        let name = p.provider_name;
-        // Simple normalization
-        if (name === "Amazon Prime Video") name = "Prime Video";
-        if (name === "Apple TV Plus") name = "Apple TV+";
-        if (name === "Google Play Movies") name = "Google Play";
-        if (name === "YouTube Premium") name = "YouTube";
-
-        if (!seen.has(name)) {
-          seen.add(name);
-          providers.push({ provider_name: name, display_priority: p.display_priority });
-        }
-      }
-
-      providers.sort((a, b) => (a.display_priority || 999) - (b.display_priority || 999));
-      return { id, mediaType, providers };
-    } catch (e) {
-      console.error(`Failed to fetch providers for ${mediaType} ${id}`, e);
-      return { id, mediaType, providers: [] };
-    }
-  });
-
-  const providersMap = new Map<string, { provider_name: string }[]>();
-  const providersResults = await Promise.all(providerPromises);
-  providersResults.forEach(r => {
-    if (r.providers.length > 0) {
-      providersMap.set(`${r.mediaType}:${r.id}`, r.providers);
-    }
-  });
-
   return {
+    badgeTargets: [...topCredits.values()],
     details: {
       id: details.id,
       name: details.name,
@@ -199,6 +157,7 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
     credits: {
       cast: credits.cast.map((c) => ({
         id: c.id,
+        creditId: c.credit_id,
         title: c.title || c.name || "Unknown Title",
         posterPath: c.poster_path,
         releaseDate: c.release_date || c.first_air_date || null,
@@ -207,10 +166,10 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
         voteAverage: c.vote_average,
         genreIds: c.genre_ids ?? [],
         genre: (c.genre_ids?.length ?? 0) > 0 ? getGenreName(c.genre_ids[0]) : "Unknown",
-        availability: providersMap.get(`${c.media_type}:${c.id}`),
       })),
       crew: credits.crew.map((c) => ({
         id: c.id,
+        creditId: c.credit_id,
         title: c.title || c.name || "Unknown Title",
         posterPath: c.poster_path,
         releaseDate: c.release_date || c.first_air_date || null,
@@ -220,7 +179,6 @@ export async function getPersonPagePayload(id: string, region = "US"): Promise<P
         voteAverage: c.vote_average,
         genreIds: c.genre_ids ?? [],
         genre: (c.genre_ids?.length ?? 0) > 0 ? getGenreName(c.genre_ids[0]) : "Unknown",
-        availability: providersMap.get(`${c.media_type}:${c.id}`),
       })),
     },
   };

@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { Heart } from 'lucide-react';
 import Image from 'next/image';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 
 export interface PosterCardProps {
   title: string;
@@ -13,6 +14,8 @@ export interface PosterCardProps {
   genre: string;
   imageSrc?: string; // Optional for placeholder behavior
   availability?: Array<{ provider_name: string; logo_path?: string | null }>;
+  /** Availability was looked up for the viewer's region; with no badges, shows "Not in your region". */
+  availabilityChecked?: boolean;
   isFavorite?: boolean;
   onFavoriteToggle?: () => void;
   onClick?: () => void;
@@ -26,6 +29,7 @@ export function PosterCard({
   genre,
   imageSrc,
   availability,
+  availabilityChecked,
   isFavorite,
   onFavoriteToggle,
   onClick,
@@ -75,6 +79,13 @@ export function PosterCard({
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
           {/* Content for hover overlay if any (currently empty except for favorite button which is separate) */}
         </div>
+
+        {/* Checked for the viewer's region and nothing there. */}
+        {availabilityChecked && (!availability || availability.length === 0) && (
+          <div className="absolute bottom-2 right-2 z-10">
+            <NotInRegionPill className="bg-background/80" />
+          </div>
+        )}
 
         {/* Availability Badges (Bottom Right - Always Visible) */}
         {availability && availability.length > 0 && (

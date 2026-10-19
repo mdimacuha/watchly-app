@@ -7,8 +7,10 @@
  */
 export const VERIFIED_ACCOUNTS = new Set<string>([
   'mdimacuha',
-  'fl4k',
-  'pusoy'
+  'eros',
+  'noumu',
+  'aikmh',
+  'luckyloi'
 ]);
 
 export function isVerifiedAccount(username: string | null | undefined): boolean {

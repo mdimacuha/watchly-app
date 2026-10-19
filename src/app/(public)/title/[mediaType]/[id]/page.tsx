@@ -10,8 +10,8 @@ import { JsonLd } from '@/components/seo/JsonLd';
 import { absoluteUrl, clampDescription } from '@/lib/seo';
 
 // Region-agnostic and free of per-user reads → ISR-cacheable. Region providers
-// and favorite/watchlist state load client-side (ClientProviderSection /
-// TitleActions). A crawl of thousands of title pages now serves from cache
+// and favorite/watchlist/review state load client-side (useTitleAvailability /
+// ActionStack / useTitleReviews). A crawl of thousands of title pages now serves from cache
 // instead of a full SSR + TMDB render per hit — the fix for the 0%-cache /
 // high-Active-CPU incident.
 //

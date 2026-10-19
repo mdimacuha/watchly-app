@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { db } from '@/db';
 import { users, userProfiles, userPreferences } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 /**
  * Request-scoped accessors for the per-user rows that get read repeatedly
@@ -15,6 +15,13 @@ import { eq } from 'drizzle-orm';
 
 export const getUserRowById = cache(async (userId: string) => {
   return db.query.users.findFirst({ where: eq(users.id, userId) });
+});
+
+/** Non-deleted user by username — lets callers start owner-scoped reads early. */
+export const getActiveUserRowByUsername = cache(async (username: string) => {
+  return db.query.users.findFirst({
+    where: and(eq(users.username, username), eq(users.isDeleted, false)),
+  });
 });
 
 export const getUserProfileRow = cache(async (userId: string) => {

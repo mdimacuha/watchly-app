@@ -6,11 +6,13 @@ import {
   watchlistItems,
   watchlists,
 } from '@/db/schema';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import type { MovieCard, TvCard } from '@/server/tmdb/types';
-import { invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { unstable_cache } from 'next/cache';
+import { forYouTag, invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { WATCHED_STATUSES } from '@/services/watchlists/validators';
 
 export type WatchableMediaType = 'movie' | 'tv';
 
@@ -78,7 +80,7 @@ export async function markAsWatched(
  * Set of `${mediaType}:${tmdbId}` keys representing "the user has
  * watched this." Pulls from BOTH:
  *   - watched_titles
- *   - watchlist_items where status='finished'
+ *   - watchlist_items with a watched status (finished / rewatch)
  *
  * Used by For You's excludeSet so finished/watched titles don't appear
  * in recommendations.
@@ -104,7 +106,7 @@ export async function getWatchedKeySet(userId: string): Promise<Set<string>> {
       .where(
         and(
           eq(watchlists.userId, userId),
-          eq(watchlistItems.status, 'finished'),
+          inArray(watchlistItems.status, [...WATCHED_STATUSES]),
         ),
       ),
   ]);
@@ -128,7 +130,8 @@ export interface WatchedEntry {
 /**
  * Pulls the user's full watched-titles set, merging:
  *   - watched_titles (explicit Mark as Watched)
- *   - watchlist_items where status='finished' (watchlist completions)
+ *   - watchlist_items with a watched status (finished / rewatch); rewatch
+ *     rows without a finishedAt fall back to their updatedAt
  *
  * Deduped by (mediaType, mediaId) — when a title appears in both sources
  * the latest timestamp wins, so the profile grid shows it where the
@@ -151,14 +154,16 @@ export async function getWatchedEntries(
       .select({
         mediaType: watchlistItems.mediaType,
         mediaId: watchlistItems.mediaId,
-        finishedAt: watchlistItems.finishedAt,
+        finishedAt: sql<Date>`coalesce(${watchlistItems.finishedAt}, ${watchlistItems.updatedAt})`.mapWith(
+          (v: string | Date) => new Date(v),
+        ),
       })
       .from(watchlistItems)
       .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
       .where(
         and(
           eq(watchlists.userId, userId),
-          eq(watchlistItems.status, 'finished'),
+          inArray(watchlistItems.status, [...WATCHED_STATUSES]),
         ),
       ),
   ]);
@@ -216,14 +221,48 @@ export type EnrichedWatched =
  *
  * Per-row TMDB errors drop the entry rather than failing the whole
  * call: better to show 59 of 60 than to flash an error on the profile.
+ *
+ * Cached per user (every profile view needs it; building it is `take` TMDB
+ * reads). Tagged with the For You tag, which mark/unmark-watched already
+ * busts. A build that lost rows to a TMDB error is returned but not cached,
+ * so a transient failure doesn't hide titles for the whole TTL.
  */
 export async function getEnrichedWatched(
   userId: string,
   opts: { take?: number } = {},
 ): Promise<EnrichedWatched[]> {
   const take = opts.take ?? 60;
+  const cached = unstable_cache(
+    async () => {
+      const { items, failed } = await enrichWatched(userId, take);
+      if (failed > 0) throw new PartialWatchedError(items);
+      return items;
+    },
+    ['watched-enriched', userId, String(take)],
+    { revalidate: ENRICHED_WATCHED_REVALIDATE_SECONDS, tags: [forYouTag(userId)] },
+  );
+  try {
+    return await cached();
+  } catch (err) {
+    if (err instanceof PartialWatchedError) return err.items;
+    throw err;
+  }
+}
+
+const ENRICHED_WATCHED_REVALIDATE_SECONDS = 3600;
+
+class PartialWatchedError extends Error {
+  constructor(readonly items: EnrichedWatched[]) {
+    super('partial watched enrichment');
+  }
+}
+
+async function enrichWatched(
+  userId: string,
+  take: number,
+): Promise<{ items: EnrichedWatched[]; failed: number }> {
   const entries = (await getWatchedEntries(userId)).slice(0, take);
-  if (entries.length === 0) return [];
+  if (entries.length === 0) return { items: [], failed: 0 };
 
   const hydrated = await Promise.all(
     entries.map(async (e): Promise<EnrichedWatched | null> => {
@@ -256,7 +295,8 @@ export async function getEnrichedWatched(
     }),
   );
 
-  return hydrated.filter((r): r is EnrichedWatched => r !== null);
+  const items = hydrated.filter((r): r is EnrichedWatched => r !== null);
+  return { items, failed: hydrated.length - items.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +306,7 @@ export async function getEnrichedWatched(
 /**
  * Reverses `markAsWatched`:
  *   - deletes any watched_titles row for this (user, mediaType, mediaId)
- *   - flips any finished watchlist items back to 'watching' and clears
+ *   - flips any watched (finished / rewatch) items back to 'watching' and clears
  *     finishedAt so the title leaves the user's watched set entirely.
  *
  * Idempotent: safe to call even if nothing matches.
@@ -287,7 +327,7 @@ export async function unmarkWatched(
         eq(watchlists.userId, userId),
         eq(watchlistItems.mediaType, mediaType),
         eq(watchlistItems.mediaId, mediaId),
-        eq(watchlistItems.status, 'finished'),
+        inArray(watchlistItems.status, [...WATCHED_STATUSES]),
       ),
     );
 

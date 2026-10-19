@@ -1,4 +1,4 @@
-import type { AccentSlug } from '@/constants/accentColors';
+import type { AccentColor } from '@/constants/accentColors';
 
 /**
  * Safe-for-client user shape — no secrets, no password fields.
@@ -17,7 +17,7 @@ export type AuthUser = {
    * read — see PublicShell / AccentScope. Optional so other AuthUser producers
    * needn't supply it.
    */
-  accentColor?: AccentSlug | null;
+  accentColor?: AccentColor | null;
 };
 
 export type AuthStatus = 'unknown' | 'authenticated' | 'unauthenticated';

@@ -28,19 +28,33 @@ import { getActivity } from '@/services/activity/getActivity';
 import type { ActivityItem } from '@/services/activity/types';
 import { getUserRegion } from '@/services/preferences';
 import {
+  getActiveUserRowByUsername,
   getUserRowById,
   getUserProfileRow,
   getUserPreferencesRow,
 } from '@/services/users/rows';
+import { unstable_cache } from 'next/cache';
 import { tmdbFetch } from '@/server/tmdb/client';
-import { ACCENT_SLUGS, type AccentSlug } from '@/constants/accentColors';
+import { forYouTag } from '@/services/forYou/cacheTag';
+import { normalizeAccentColor, type AccentColor } from '@/constants/accentColors';
 import { cleanProviderName } from '@/utils/providers';
+import {
+  DEFAULT_VISIBILITY_PREFS,
+  resolveProfileVisibility,
+  type ViewerRole,
+  type VisibilityPrefs,
+} from './visibility';
 
-function isAccentSlug(v: string | null | undefined): v is AccentSlug {
-  return (
-    typeof v === 'string' &&
-    (ACCENT_SLUGS as readonly string[]).includes(v)
-  );
+/** The visibility-relevant columns of a preferences row (defaults when missing). */
+export function visibilityPrefsOf(
+  row: { profileVisibility?: VisibilityPrefs['profileVisibility'] | null; watchlistsVisibility?: VisibilityPrefs['watchlistsVisibility'] | null; hideFavorites?: boolean | null; hideWatched?: boolean | null } | null | undefined,
+): VisibilityPrefs {
+  return {
+    profileVisibility: row?.profileVisibility ?? DEFAULT_VISIBILITY_PREFS.profileVisibility,
+    watchlistsVisibility: row?.watchlistsVisibility ?? DEFAULT_VISIBILITY_PREFS.watchlistsVisibility,
+    hideFavorites: row?.hideFavorites ?? DEFAULT_VISIBILITY_PREFS.hideFavorites,
+    hideWatched: row?.hideWatched ?? DEFAULT_VISIBILITY_PREFS.hideWatched,
+  };
 }
 
 // Used by getTasteProfile to count flatrate providers for one favorite into
@@ -67,6 +81,7 @@ const RECENT_FAVORITES_LIMIT = 6;
 const RECENT_WATCHLISTS_LIMIT = 3;
 const RECENT_ACTIVITY_LIMIT = 5;
 const TASTE_SAMPLE_LIMIT = 50;
+const TASTE_REVALIDATE_SECONDS = 3600;
 const TOP_GENRES = 5;
 const TOP_DECADES = 3;
 const TOP_PROVIDERS = 3;
@@ -111,8 +126,8 @@ export type ProfileView = {
   avatarUrl: string;
   memberSince: Date;
   region: string;
-  /** Accent palette slug (see src/constants/accentColors.ts) or null = default. */
-  accentColor: AccentSlug | null;
+  /** Accent: preset slug or custom hex (src/constants/accentColors.ts); null = default. */
+  accentColor: AccentColor | null;
   /** When true (default), profile pages render a poster-collage banner. */
   bannerEnabled: boolean;
   /** The card's highlight slot setting (validated). */
@@ -123,7 +138,7 @@ export type ProfileView = {
   stats: {
     favoritesCount: number;
     watchlistsCount: number;
-    /** Merged count: watched_titles UNION watchlist_items.status='finished'. */
+    /** Merged count: watched_titles UNION watchlist_items with a watched status (finished / rewatch). */
     watchedCount: number;
   };
   profileVisibility: 'public' | 'followers_only' | 'private';
@@ -275,9 +290,8 @@ export async function getProfileWithStats(userId: string): Promise<ProfileView> 
     avatarUrl: profileRow?.avatarUrl || userRow.avatarUrl || '',
     memberSince: userRow.createdAt,
     region: prefsRow?.regionCode ?? 'PH',
-    // Validate against the known slug set on read — DB stores arbitrary text
-    // (see schema comment) so we can't trust the value blindly.
-    accentColor: isAccentSlug(profileRow?.accentColor) ? profileRow!.accentColor : null,
+    // Validate on read — DB stores arbitrary text (see schema comment).
+    accentColor: normalizeAccentColor(profileRow?.accentColor),
     bannerEnabled: profileRow?.bannerEnabled ?? true,
     cardFeature: readCardFeature(profileRow),
     hideWatched: prefsRow?.hideWatched ?? true,
@@ -360,12 +374,30 @@ interface WatchProvidersBlock {
  * read. Capped at TASTE_SAMPLE_LIMIT total inputs to keep TMDB fan-out
  * bounded.
  *
- * Providers are tallied from the user's region's flatrate. If the user's
- * region produced no provider hits (small/missing TMDB coverage), falls
- * back to US flatrate so the section isn't empty for non-US users with
- * spotty regional data.
+ * Providers are tallied from the user's region's flatrate only (no
+ * fallback to another country).
+ *
+ * Cached per user + region + visible sources: building it costs up to
+ * TASTE_SAMPLE_LIMIT TMDB reads, and every profile visit needs one or two
+ * (owner's taste, viewer's taste for the match). Tagged with the For You
+ * tag, which every write to a taste input (favorites, watched, swipes)
+ * already busts, so changes show on the next read; the TTL is a backstop.
  */
 export async function getTasteProfile(
+  userId: string,
+  options: Parameters<typeof computeTasteProfile>[1] = {},
+): Promise<TasteProfile> {
+  const region = options.region ?? 'US';
+  const sources = options.sources ?? { favorites: true, watched: true, swipes: true };
+  const sourcesKey = `${+sources.favorites}${+sources.watched}${+sources.swipes}`;
+  return unstable_cache(
+    () => computeTasteProfile(userId, { region, sources }),
+    ['taste-profile', userId, region, sourcesKey],
+    { revalidate: TASTE_REVALIDATE_SECONDS, tags: [forYouTag(userId)] },
+  )();
+}
+
+async function computeTasteProfile(
   userId: string,
   options: {
     region?: string;
@@ -433,7 +465,6 @@ export async function getTasteProfile(
   const genreCounts = new Map<string, number>();
   const decadeCounts = new Map<string, number>();
   const regionProviderCounts = new Map<string, number>();
-  const usProviderCounts = new Map<string, number>();
 
   await Promise.all(
     inputs.map(async (input) => {
@@ -462,16 +493,12 @@ export async function getTasteProfile(
           }
         }
 
-        // Tally flatrate provider names for both the user's region and US.
-        // Each input contributes at most one count per provider — multiple
-        // tiers of the same service (e.g. "Netflix" + "Netflix Standard with
-        // Ads") collapse via cleanProviderName.
+        // Tally flatrate provider names for the user's region only. Each
+        // input contributes at most one count per provider — multiple tiers
+        // of the same service (e.g. "Netflix" + "Netflix Standard with Ads")
+        // collapse via cleanProviderName.
         const regionData = raw['watch/providers']?.results?.[region];
         tallyFlatrate(regionData, regionProviderCounts);
-        if (region !== 'US') {
-          const us = raw['watch/providers']?.results?.['US'];
-          tallyFlatrate(us, usProviderCounts);
-        }
       } catch {
         // TMDB fetch failed for this item; skip silently.
       }
@@ -484,16 +511,12 @@ export async function getTasteProfile(
       .slice(0, n)
       .map(([k]) => k);
 
-  // Prefer the user's region; fall back to US only if region produced nothing.
-  // Avoids the misleading "your taste streams on Hulu" when the user is in PH
-  // and TMDB just lacks PH data for their favorites.
-  const providerSource =
-    regionProviderCounts.size > 0 ? regionProviderCounts : usProviderCounts;
-
+  // User's region only — no fallback to another country, which showed
+  // services the user can't stream where they live.
   return {
     genres: topByCount(genreCounts, TOP_GENRES),
     decades: topByCount(decadeCounts, TOP_DECADES),
-    providers: topByCount(providerSource, TOP_PROVIDERS),
+    providers: topByCount(regionProviderCounts, TOP_PROVIDERS),
     genreWeights: weighted(genreCounts, 6),
     decadeWeights: weighted(decadeCounts, 6),
     sampleSize: inputs.length,
@@ -516,12 +539,7 @@ export async function getPublicProfileByUsername(
   username: string,
   viewerId: string | null,
 ): Promise<ProfileView> {
-  const userRow = await db.query.users.findFirst({
-    where: and(
-      eq(users.username, username),
-      eq(users.isDeleted, false),
-    ),
-  });
+  const userRow = await getActiveUserRowByUsername(username);
   if (!userRow) throw new NotFoundAppError('User not found');
 
   const prefsRow = await getUserPreferencesRow(userRow.id);
@@ -534,20 +552,68 @@ export async function getPublicProfileByUsername(
     if (viewerId && (await social.isEitherBlocked(viewerId, userRow.id))) {
       throw new NotFoundAppError('User not found');
     }
-    if (visibility === 'private') {
-      throw new ForbiddenAppError('This profile is private');
-    }
-    // followers_only: accepted followers may read (the follow graph exists
-    // now; this used to be treated as fully private).
-    if (visibility === 'followers_only') {
-      const state = await social.getFollowState(viewerId, userRow.id);
-      if (state.status !== 'accepted') {
-        throw new ForbiddenAppError('This profile is only visible to followers');
-      }
+    // Only a followers-only profile needs the follow edge to decide.
+    const role: ViewerRole =
+      visibility === 'followers_only' &&
+      (await social.getFollowState(viewerId, userRow.id)).status === 'accepted'
+        ? 'follower'
+        : 'stranger';
+    if (!resolveProfileVisibility(visibilityPrefsOf(prefsRow), role).profile) {
+      throw new ForbiddenAppError(
+        visibility === 'private' ? 'This profile is private' : 'This profile is only visible to followers',
+      );
     }
   }
 
   return getProfileWithStats(userRow.id);
+}
+
+/** What a viewer who can't open a profile still sees: who it is, and how to follow. */
+export interface LockedProfile {
+  userId: string;
+  username: string;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl: string;
+  accentColor: AccentColor | null;
+  visibility: 'followers_only' | 'private';
+  isSelf: boolean;
+  followState: import('@/services/social').FollowState;
+  followSummary: import('@/services/social').FollowSummary;
+}
+
+/**
+ * The locked view of a profile the viewer may not open (private, or
+ * followers-only without an accepted follow). Name, avatar and follow counts
+ * only — no bio, lists or taste. Blocked either way still reads as missing.
+ */
+export async function getLockedProfile(username: string, viewerId: string | null): Promise<LockedProfile> {
+  const userRow = await getActiveUserRowByUsername(username);
+  if (!userRow) throw new NotFoundAppError('User not found');
+  const social = await import('@/services/social');
+  if (viewerId && viewerId !== userRow.id && (await social.isEitherBlocked(viewerId, userRow.id))) {
+    throw new NotFoundAppError('User not found');
+  }
+  const [profile, followState, followSummary] = await Promise.all([
+    getProfileWithStats(userRow.id),
+    social.getFollowState(viewerId, userRow.id),
+    social.getFollowSummary(userRow.id),
+  ]);
+  if (profile.profileVisibility === 'public') throw new ValidationAppError('Profile is public');
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.displayName,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    avatarUrl: profile.avatarUrl,
+    accentColor: profile.accentColor,
+    visibility: profile.profileVisibility,
+    isSelf: viewerId === profile.userId,
+    followState,
+    followSummary,
+  };
 }
 
 /**
@@ -579,8 +645,6 @@ export async function getPublicProfileOverview(
     users: import('@/services/social').PublicUserCard[];
     totalCount: number;
   };
-  /** Banner poster URLs (empty when disabled or no favorites). */
-  bannerPosters: string[];
 }> {
   const profile = await getPublicProfileByUsername(username, viewerId);
   const isSelf = viewerId === profile.userId;
@@ -588,14 +652,16 @@ export async function getPublicProfileOverview(
   // Read the owner's hide-favorites / hide-watched preferences. Owners
   // always see their own data regardless of these flags. Cached accessor
   // reuses the row already loaded by getProfileWithStats this request.
-  const prefsRow = await getUserPreferencesRow(profile.userId);
-  const ownerHidesFavorites = prefsRow?.hideFavorites ?? false;
-  const ownerHidesWatched = prefsRow?.hideWatched ?? true;
-  const showFavoritesToViewer = isSelf || !ownerHidesFavorites;
-  const showWatchedToViewer = isSelf || !ownerHidesWatched;
-  // watchlistsVisibility (Settings → Privacy) — previously saved but never
-  // enforced. followers_only needs an accepted follow (checked below).
-  const watchlistsVisibility = prefsRow?.watchlistsVisibility ?? 'public';
+  const [prefsRow, followState] = await Promise.all([
+    getUserPreferencesRow(profile.userId),
+    import('@/services/social').then((m) => m.getFollowState(viewerId, profile.userId)),
+  ]);
+  // The shared rules (services/profile/visibility.ts) — also behind the
+  // Settings "what visitors see" preview.
+  const role: ViewerRole = isSelf ? 'owner' : followState.status === 'accepted' ? 'follower' : 'stranger';
+  const visible = resolveProfileVisibility(visibilityPrefsOf(prefsRow), role);
+  const showFavoritesToViewer = visible.favorites;
+  const showWatchedToViewer = visible.watched;
 
   // Public taste profile is scoped to the *owner's* region (matching the
   // accent-visibility decision — pages adopt the owner's context, not the
@@ -603,19 +669,19 @@ export async function getPublicProfileOverview(
   // via getProfileWithStats.
   const [
     publicWatchlists,
-    rawFavorites,
+    recentFavorites,
     tasteProfile,
-    followState,
     followSummary,
     mutualFollowers,
     watchedTitles,
   ] = await Promise.all([
-    isSelf || watchlistsVisibility !== 'private'
+    visible.watchlists
       ? listPublicWatchlists(profile.userId)
       : Promise.resolve([] as Awaited<ReturnType<typeof listPublicWatchlists>>),
+    // Enrichment chained onto the read, not after the whole batch.
     showFavoritesToViewer
-      ? getFavorites(profile.userId, { limit: RECENT_FAVORITES_LIMIT })
-      : Promise.resolve([] as Awaited<ReturnType<typeof getFavorites>>),
+      ? getFavorites(profile.userId, { limit: RECENT_FAVORITES_LIMIT }).then(enrichFavorites)
+      : Promise.resolve([] as EnrichedFavorite[]),
     // Only from what this viewer may see: hidden favorites/watched (and
     // swipes, never public) must not shape the public taste profile.
     getTasteProfile(profile.userId, {
@@ -625,9 +691,6 @@ export async function getPublicProfileOverview(
         : { favorites: showFavoritesToViewer, watched: showWatchedToViewer, swipes: false },
     }),
     // Social calls — dynamic import to keep this file's static graph small.
-    import('@/services/social').then((m) =>
-      m.getFollowState(viewerId, profile.userId),
-    ),
     import('@/services/social').then((m) => m.getFollowSummary(profile.userId)),
     viewerId
       ? import('@/services/social').then((m) =>
@@ -644,21 +707,7 @@ export async function getPublicProfileOverview(
           >,
         ),
   ]);
-  const recentFavorites = await enrichFavorites(rawFavorites);
-
-  // Banner is built from favorites — so it's hidden whenever they are.
-  const bannerPosters =
-    profile.bannerEnabled && showFavoritesToViewer
-      ? await import('@/services/profile/banner').then((m) =>
-          m.getBannerPosters(profile.userId),
-        )
-      : [];
-
-  // followers_only watchlists: only accepted followers (and the owner).
-  const visibleWatchlists =
-    isSelf || watchlistsVisibility === 'public' || followState.status === 'accepted'
-      ? publicWatchlists
-      : [];
+  const visibleWatchlists = publicWatchlists;
 
   // Counts must not reveal what the viewer can't see: no private-list or
   // hidden-favorites/watched totals for visitors.
@@ -677,15 +726,14 @@ export async function getPublicProfileOverview(
     profile: visibleProfile,
     publicWatchlists: visibleWatchlists,
     recentFavorites,
-    favoritesHidden: ownerHidesFavorites && !isSelf,
-    watchedHidden: ownerHidesWatched && !isSelf,
+    favoritesHidden: !visible.favorites,
+    watchedHidden: !visible.watched,
     watchedTitles,
     tasteProfile,
     isSelf,
     followState,
     followSummary,
     mutualFollowers,
-    bannerPosters,
   };
 }
 

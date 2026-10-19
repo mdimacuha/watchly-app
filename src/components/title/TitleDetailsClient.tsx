@@ -1,23 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { TitlePagePayload } from '@/services/tmdb/title';
+import type { TmdbVideo } from '@/server/tmdb/types';
 import { BackLink } from '@/components/nav/BackLink';
-import { TitleHero } from './TitleHero';
-import { TrailerModal } from './TrailerModal';
-import { TitleFeedSection } from './TitleFeedSection';
-import { ReviewsSection } from './ReviewsSection';
-import { FEATURES } from '@/constants/features';
-import { useAuthStore } from '@/client/stores/auth';
+import { TitlePageBody } from './TitlePageBody';
 
 interface TitleDetailsClientProps {
   titleData: TitlePagePayload;
 }
 
 export function TitleDetailsClient({ titleData }: TitleDetailsClientProps) {
-  const [isTrailerOpen, setTrailerOpen] = useState(false);
-  const isAuthenticated = useAuthStore((s) => s.status === 'authenticated');
-  const isReviewable = titleData.mediaType === 'movie' || titleData.mediaType === 'tv';
+  // Any video (the trailer button or a Media tile) plays in the hero band,
+  // which grows into a player at the top of the page — so scroll up to it.
+  const [playing, setPlaying] = useState<TmdbVideo | null>(null);
+  const play = useCallback((video: TmdbVideo | null) => {
+    if (!video) return;
+    setPlaying(video);
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  }, []);
+  const close = useCallback(() => setPlaying(null), []);
+
   return (
     <div className="relative flex flex-col min-h-screen">
       {/* Floating over the hero rather than sitting in a plain strip above it. */}
@@ -26,31 +32,12 @@ export function TitleDetailsClient({ titleData }: TitleDetailsClientProps) {
         className="absolute top-4 left-4 md:top-6 md:left-6 z-30 rounded-full bg-background/70 hover:bg-background/90 backdrop-blur-sm border border-border/60 px-3 py-1.5 shadow-sm"
       />
 
-      <TitleHero
+      <TitlePageBody
         titleData={titleData}
-        onWatchTrailer={() => setTrailerOpen(true)}
-      />
-
-      {/* Title reviews (self-only v1). Gated behind FEATURES.reviews so the
-          un-migrated `user_reviews` table is never queried while off. */}
-      {FEATURES.reviews && isReviewable && (
-        <div className="container mx-auto px-4 py-8">
-          <ReviewsSection
-            mediaType={titleData.mediaType}
-            id={titleData.id}
-            isAuthenticated={isAuthenticated}
-          />
-        </div>
-      )}
-
-      <div className="container mx-auto px-4 py-8">
-        <TitleFeedSection items={titleData.feedItems} />
-      </div>
-
-      <TrailerModal
-        isOpen={isTrailerOpen}
-        onClose={() => setTrailerOpen(false)}
-        trailer={titleData.trailer}
+        onWatchTrailer={() => play(titleData.trailer)}
+        onPlayVideo={play}
+        playing={playing}
+        onClosePlayer={close}
       />
     </div>
   );

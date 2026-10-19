@@ -40,18 +40,38 @@ interface FollowBackNotification extends BaseNotification {
 interface FollowActivityNotification extends BaseNotification {
   kind: 'follow_activity';
   /** The kind of activity this notification mirrors. */
-  activityKind: 'favorite' | 'watchlist_add' | 'watchlist_bulk_add' | 'watchlist_create';
+  activityKind: FollowActivityKind;
+  /** Star rating, for review activity. */
+  rating: number | null;
   /** Resolved title (TMDB) — null when payload didn't carry mediaId. */
   title: string | null;
   posterUrl: string | null;
   watchlistName: string | null;
 }
 
+/** A "Notify me when" alert firing on a title. System row: no actor. */
+export interface TitleAlertNotification {
+  id: string;
+  isRead: boolean;
+  createdAt: string;
+  actor: null;
+  href: string;
+  kind: 'title_available' | 'title_leaving' | 'title_new_season';
+  title: string | null;
+  posterUrl: string | null;
+  /** ISO country code the alert watches. */
+  region: string;
+  /** Services it arrived on (available) or left (leaving). */
+  providers: string[];
+  seasonNumber: number | null;
+}
+
 export type NotificationItem =
   | FollowRequestNotification
   | FollowAcceptedNotification
   | FollowBackNotification
-  | FollowActivityNotification;
+  | FollowActivityNotification
+  | TitleAlertNotification;
 
 export interface NotificationsPayload {
   items: NotificationItem[];
@@ -65,12 +85,23 @@ export interface NotificationsPayload {
 const POSTER_BASE = 'https://image.tmdb.org/t/p/w185';
 
 /** Payload shapes mirrored from `services/activity/record.ts`. */
+/** Written by services/alerts/check.ts. */
+interface TitleAlertPayload {
+  mediaType?: 'movie' | 'tv';
+  mediaId?: string;
+  region?: string;
+  providers?: string[];
+  seasonNumber?: number;
+}
+
+const TITLE_ALERT_KINDS = new Set(['title_available', 'title_leaving', 'title_new_season']);
+
+const FOLLOW_ACTIVITY_KINDS = ['favorite', 'watchlist_add', 'watchlist_bulk_add', 'watchlist_create', 'review'] as const;
+type FollowActivityKind = (typeof FOLLOW_ACTIVITY_KINDS)[number];
+const isFollowActivityKind = (k: string): k is FollowActivityKind => (FOLLOW_ACTIVITY_KINDS as readonly string[]).includes(k);
+
 interface FollowActivityPayload {
-  activityType:
-    | 'favorite'
-    | 'watchlist_add'
-    | 'watchlist_bulk_add'
-    | 'watchlist_create';
+  activityType: string;
   activityPayload: Record<string, unknown>;
 }
 
@@ -99,7 +130,7 @@ export async function getNotifications(
       readAt: notifications.readAt,
       createdAt: notifications.createdAt,
       actorId: notifications.actorId,
-      // Actor join — null when actorId is null (system events, none in v1).
+      // Actor join — null when actorId is null (system events: title alerts).
       actorUsername: users.username,
       actorFirstName: users.firstName,
       actorLastName: users.lastName,
@@ -117,11 +148,16 @@ export async function getNotifications(
   const hasMore = rows.length > pageSize;
   const slice = rows.slice(0, pageSize);
 
-  // 2. Collect mediaIds from follow_activity rows so we can batch TMDB
-  // fetches instead of one-per-row.
+  // 2. Collect mediaIds from follow_activity and title alert rows so we can
+  // batch TMDB fetches instead of one-per-row.
   type MediaKey = string; // "movie:123" / "tv:456"
   const mediaKeys = new Set<MediaKey>();
   for (const r of slice) {
+    if (TITLE_ALERT_KINDS.has(r.type)) {
+      const p = r.payload as TitleAlertPayload;
+      if (p.mediaType && p.mediaId) mediaKeys.add(`${p.mediaType}:${p.mediaId}`);
+      continue;
+    }
     if (r.type !== 'follow_activity') continue;
     const inner = (r.payload as FollowActivityPayload).activityPayload as
       | { mediaType?: string; mediaId?: string }
@@ -165,7 +201,7 @@ export async function getNotifications(
 
 interface RawRow {
   id: string;
-  type: 'follow_request' | 'follow_accepted' | 'follow_back' | 'follow_activity';
+  type: (typeof notifications.$inferSelect)['type'];
   payload: unknown;
   readAt: Date | null;
   createdAt: Date;
@@ -182,6 +218,24 @@ function buildItem(
   r: RawRow,
   mediaCache: Map<string, { title: string; posterPath: string | null }>,
 ): NotificationItem | null {
+  if (r.type === 'title_available' || r.type === 'title_leaving' || r.type === 'title_new_season') {
+    const p = r.payload as TitleAlertPayload;
+    if (!p.mediaType || !p.mediaId) return null;
+    const cached = mediaCache.get(`${p.mediaType}:${p.mediaId}`);
+    return {
+      id: r.id,
+      isRead: r.readAt !== null,
+      createdAt: r.createdAt.toISOString(),
+      actor: null,
+      href: `/title/${p.mediaType}/${p.mediaId}`,
+      kind: r.type,
+      title: cached?.title || null,
+      posterUrl: cached?.posterPath ? `${POSTER_BASE}${cached.posterPath}` : null,
+      region: p.region ?? '',
+      providers: Array.isArray(p.providers) ? p.providers : [],
+      seasonNumber: typeof p.seasonNumber === 'number' ? p.seasonNumber : null,
+    };
+  }
   if (!r.actorId || !r.actorUsername) return null;
 
   const actor: NotificationActor = {
@@ -224,11 +278,15 @@ function buildItem(
       };
     case 'follow_activity': {
       const payload = r.payload as FollowActivityPayload;
+      // Older rows can carry kinds the bell has no copy for (e.g. follows).
+      if (!isFollowActivityKind(payload.activityType)) return null;
+      const activityKind = payload.activityType;
       const inner = payload.activityPayload as {
         mediaType?: 'movie' | 'tv' | 'collection' | 'artist';
         mediaId?: string;
         watchlistId?: string;
         watchlistName?: string;
+        rating?: number;
       };
 
       let title: string | null = null;
@@ -253,7 +311,8 @@ function buildItem(
       return {
         ...base,
         kind: 'follow_activity',
-        activityKind: payload.activityType,
+        activityKind,
+        rating: typeof inner.rating === 'number' ? inner.rating : null,
         title,
         posterUrl,
         watchlistName: inner.watchlistName ?? null,

@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { userPreferences } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { ValidationAppError } from '@/utils/errors';
+import type { NotificationType } from './index';
 
 /**
  * Per-channel notification opt-in/out. Missing keys default to TRUE at
@@ -14,10 +15,12 @@ import { ValidationAppError } from '@/utils/errors';
  * `follow_events` covers follow_request, follow_accepted, follow_back.
  * `follow_activity` is the noisier one (activity from followed users)
  * and gets its own toggle so users can mute it without silencing follows.
+ * `title_alerts` covers the "Notify me when" alerts set on titles.
  */
 export const notificationPrefsSchema = z.object({
   follow_events: z.boolean().optional(),
   follow_activity: z.boolean().optional(),
+  title_alerts: z.boolean().optional(),
 });
 
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
@@ -25,11 +28,13 @@ export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 export interface ResolvedNotificationPrefs {
   follow_events: boolean;
   follow_activity: boolean;
+  title_alerts: boolean;
 }
 
 const DEFAULTS: ResolvedNotificationPrefs = {
   follow_events: true,
   follow_activity: true,
+  title_alerts: true,
 };
 
 export async function getNotificationPreferences(
@@ -43,6 +48,7 @@ export async function getNotificationPreferences(
   return {
     follow_events: raw.follow_events ?? DEFAULTS.follow_events,
     follow_activity: raw.follow_activity ?? DEFAULTS.follow_activity,
+    title_alerts: raw.title_alerts ?? DEFAULTS.title_alerts,
   };
 }
 
@@ -78,11 +84,7 @@ export async function updateNotificationPreferences(
  */
 export async function shouldDeliverToUser(
   userId: string,
-  type:
-    | 'follow_request'
-    | 'follow_accepted'
-    | 'follow_back'
-    | 'follow_activity',
+  type: NotificationType,
 ): Promise<boolean> {
   const prefs = await getNotificationPreferences(userId);
   if (
@@ -94,6 +96,13 @@ export async function shouldDeliverToUser(
   }
   if (type === 'follow_activity') {
     return prefs.follow_activity;
+  }
+  if (
+    type === 'title_available' ||
+    type === 'title_leaving' ||
+    type === 'title_new_season'
+  ) {
+    return prefs.title_alerts;
   }
   return true;
 }

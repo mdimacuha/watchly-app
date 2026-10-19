@@ -18,6 +18,7 @@ import {
   updateItemStatus,
   updateItemNotes,
   getWatchlistsContainingItem,
+  getWatchlistPreviews,
   getOrCreateDefaultWatchlist,
   bulkAddCollectionParts,
   reorderItems,
@@ -92,9 +93,15 @@ export async function deleteWatchlistAction(watchlistId: string) {
   revalidatePath('/watchlists');
 }
 
-export async function listWatchlistsAction() {
+export async function listWatchlistsAction(opts: { previews?: number; runtimes?: boolean } = {}) {
   const userId = await requireUserId();
-  return listWatchlists(userId);
+  return listWatchlists(userId, opts);
+}
+
+/** All items' poster + title for one of the viewer's lists (cover scrub). */
+export async function getWatchlistPreviewsAction(watchlistId: string) {
+  const userId = await requireUserId();
+  return getWatchlistPreviews(watchlistId, userId);
 }
 
 export async function getEnrichedWatchlistAction(watchlistId: string) {

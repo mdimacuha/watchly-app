@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Camera, Check, Trash2 } from 'lucide-react';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import Image from 'next/image';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,8 @@ import { useToast } from '@/hooks/useToast';
 import { AvatarUpload } from './AvatarUpload';
 import { AccentScope } from './AccentScope';
 import { cn } from '@/lib/cn';
-import { ACCENTS, type AccentSlug } from '@/constants/accentColors';
+import { getAccent, type AccentColor } from '@/constants/accentColors';
+import { AccentPicker } from './AccentPicker';
 import {
   CARD_FEATURE_LABELS,
   CARD_FEATURE_LABEL_SLUGS,
@@ -25,7 +27,7 @@ interface ProfileEditValues {
   displayName: string;
   bio: string;
   avatarUrl: string;
-  accentColor: AccentSlug | null;
+  accentColor: AccentColor | null;
   /** Only sent when the editor shows the Card highlight section. */
   cardFeature?: CardFeatureSetting;
 }
@@ -53,8 +55,6 @@ interface ProfileEditModalProps {
 const NAME_MAX = 50;
 const BIO_MAX = 160;
 // The default accent (no override) previews as Watchly blue.
-const DEFAULT_SWATCH = ACCENTS.blue.primary;
-
 /**
  * Edit profile: a live preview of the profile card on one side, the form on
  * the other. The whole modal adopts the accent being picked, so the preview,
@@ -64,7 +64,7 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [bio, setBio] = useState(initial.bio);
   const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl);
-  const [accentColor, setAccentColor] = useState<AccentSlug | null>(initial.accentColor);
+  const [accentColor, setAccentColor] = useState<AccentColor | null>(initial.accentColor);
   const [highlightMode, setHighlightMode] = useState<CardFeatureMode>(cardFeature?.initial.mode ?? 'now_showing');
   const [highlightPick, setHighlightPick] = useState<string | null>(
     cardFeature?.initial.mediaType && cardFeature.initial.mediaId
@@ -106,10 +106,10 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
     });
   };
 
-  const accentName = accentColor ? ACCENTS[accentColor].name : 'Default';
+  const accentName = getAccent(accentColor)?.name ?? 'Default';
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl">
+    <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl">
       <AccentScope accentColor={accentColor}>
         <form onSubmit={handleSave} className="flex flex-col">
           <header className="border-b border-border px-6 pt-6 pb-4">
@@ -117,7 +117,7 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
             <p className="text-sm text-muted-foreground">Changes preview live — this is how others see your card.</p>
           </header>
 
-          <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             {/* Live preview */}
             <section aria-label="Preview" className="flex flex-col gap-2">
               <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Preview</span>
@@ -165,6 +165,14 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
                     )}
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium" id="accent-label">Accent colour</span>
+                  <span className="text-xs text-muted-foreground">{accentName}</span>
+                </div>
+                <AccentPicker value={accentColor} onPreview={setAccentColor} onCommit={setAccentColor} wheelSize={124} stacked />
               </div>
             </section>
 
@@ -218,29 +226,10 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="What do you love to watch?"
                   maxLength={BIO_MAX}
-                  rows={3}
+                  rows={2}
                   className="resize-none rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </Field>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-medium" id="accent-label">Accent color</span>
-                  <span className="text-xs text-muted-foreground">{accentName}</span>
-                </div>
-                <div role="radiogroup" aria-labelledby="accent-label" className="flex flex-wrap gap-2">
-                  <Swatch label="Default" color={DEFAULT_SWATCH} isActive={accentColor === null} onClick={() => setAccentColor(null)} />
-                  {Object.values(ACCENTS).map((accent) => (
-                    <Swatch
-                      key={accent.slug}
-                      label={accent.name}
-                      color={accent.primary}
-                      isActive={accentColor === accent.slug}
-                      onClick={() => setAccentColor(accent.slug)}
-                    />
-                  ))}
-                </div>
-              </div>
 
               {cardFeature && (
                 <div className="flex flex-col gap-2">
@@ -274,6 +263,7 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
                       <p className="text-xs text-muted-foreground">Favorite a few titles first — then you can feature one here.</p>
                     ) : (
                       <>
+                        <ArrowStrip label="favorites">
                         <div role="radiogroup" aria-label="Favorite to feature" className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 py-1">
                           {cardFeature.favorites.map((f) => {
                             const key = `${f.mediaType}:${f.tmdbId}`;
@@ -300,6 +290,7 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
                             );
                           })}
                         </div>
+                        </ArrowStrip>
                         <div role="radiogroup" aria-label="Label" className="flex flex-wrap gap-1.5">
                           {CARD_FEATURE_LABEL_SLUGS.map((slug) => (
                             <button
@@ -326,7 +317,8 @@ export function ProfileEditModal({ isOpen, onClose, initial, onSubmit, cardFeatu
             </div>
           </div>
 
-          <footer className="flex justify-end gap-2 border-t border-border px-6 py-4">
+          {/* Pinned so Save is reachable without scrolling. */}
+          <footer className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
@@ -396,33 +388,4 @@ function Field({
   );
 }
 
-function Swatch({
-  label,
-  color,
-  isActive,
-  onClick,
-}: {
-  label: string;
-  color: string;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={isActive}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      // Swatch colours are the accent palette's own data values.
-      style={{ backgroundColor: color }}
-      className={cn(
-        'relative h-8 w-8 rounded-full transition-transform cursor-pointer hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-        isActive && 'ring-2 ring-foreground ring-offset-2 ring-offset-card',
-      )}
-    >
-      {isActive && <Check className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />}
-    </button>
-  );
-}
+

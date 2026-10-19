@@ -185,6 +185,19 @@ export const limiters = {
     count: 30,
     label: 'tmdb-search',
   }),
+  // Card badges for cached pages (collection, artist): each request is up to
+  // 40 provider lookups, and a page makes 1–2 per region change.
+  cardBadges: createLimiter({
+    windowMs: min(1),
+    count: 20,
+    label: 'card-badges',
+  }),
+  // "Download my data": a full read of the user's rows; a few per 10 min.
+  dataExport: createLimiter({
+    windowMs: min(10),
+    count: 3,
+    label: 'data-export',
+  }),
   // Search analytics beacons — a few per search (performed, opened, …),
   // batched client-side. Generous, but bounded since guests can write.
   searchEvents: createLimiter({

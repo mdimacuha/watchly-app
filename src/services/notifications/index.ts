@@ -27,7 +27,10 @@ export type NotificationType =
   | 'follow_request'
   | 'follow_accepted'
   | 'follow_back'
-  | 'follow_activity';
+  | 'follow_activity'
+  | 'title_available'
+  | 'title_leaving'
+  | 'title_new_season';
 
 export type Notification = typeof notifications.$inferSelect;
 

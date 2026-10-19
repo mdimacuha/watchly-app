@@ -30,11 +30,13 @@ type QuickViewLinkProps = BaseProps &
 const TITLE_HREF = /^\/title\/(movie|tv)\/(\d+)\/?$/;
 const ARTIST_HREF = /^\/artist\/(\d+)\/?$/;
 const WATCHLIST_HREF = /^\/watchlists\/([0-9a-f-]{36})\/?$/i;
+const COLLECTION_HREF = /^\/collection\/(\d+)\/?$/;
 
 /** Full-page path for a Quick View target. */
 export function quickViewPagePath(type: QuickViewType, id: string | number): string {
   if (type === 'person') return `/artist/${id}`;
   if (type === 'watchlist') return `/watchlists/${id}`;
+  if (type === 'collection') return `/collection/${id}`;
   return `/title/${type}/${id}`;
 }
 
@@ -46,6 +48,8 @@ function parseHref(href: string): { mediaType: QuickViewType; id: string } | nul
   if (artist) return { mediaType: 'person', id: artist[1] };
   const watchlist = WATCHLIST_HREF.exec(path);
   if (watchlist) return { mediaType: 'watchlist', id: watchlist[1] };
+  const collection = COLLECTION_HREF.exec(path);
+  if (collection) return { mediaType: 'collection', id: collection[1] };
   return null;
 }
 

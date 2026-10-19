@@ -3,20 +3,25 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { X, Play, EyeOff, ArrowUpRight } from 'lucide-react';
+import { X, Play, EyeOff, ArrowUpRight, Share2 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/client/stores/ui';
 import { useAuthStore } from '@/client/stores/auth';
+import { useRegionStore } from '@/client/stores/region';
 import { buildImageUrl } from '@/lib/tmdb';
-import { formatRuntime } from '@/lib/format';
+import { shareTitle } from '@/lib/share';
 import { FavoriteButton } from '@/components/watchly/FavoriteButton';
 import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButton';
-import { ProviderSection } from '@/components/title/ProviderSection';
+import { TitleHeader } from '@/components/title/TitleHeader';
+import { AvailabilityStrip } from '@/components/title/AvailabilityStrip';
+import { OUTLINE_BTN } from '@/components/title/titleParts';
+import { toAvailability } from '@/components/title/useTitleAvailability';
 import { ErrorState } from '@/components/watchly/ErrorState';
 import { SkeletonBox } from '@/components/watchly/skeletons';
 import { PersonQuickViewContent } from '@/components/watchly/PersonQuickView';
 import { WatchlistQuickViewContent } from '@/components/watchly/WatchlistQuickView';
+import { CollectionQuickViewContent } from '@/components/watchly/CollectionQuickView';
 import { QuickViewSeasons } from '@/components/watchly/QuickViewSeasons';
 import { CollectionCard } from '@/components/title/CollectionCard';
 import type { TitlePagePayload } from '@/services/tmdb/title';
@@ -25,7 +30,7 @@ import type { TitlePagePayload } from '@/services/tmdb/title';
 // Global Quick View popup — a lightweight title preview any card can open via
 // `useUIStore().openQuickView(mediaType, id)`. Mounted exactly once in
 // AuthenticatedShell. The trailer plays INLINE (single-layer Modal, no nested
-// TrailerModal) so Escape / scroll-restore keep working.
+// modal) so Escape / scroll-restore keep working.
 // ---------------------------------------------------------------------------
 
 export function QuickViewModal() {
@@ -51,6 +56,13 @@ export function QuickViewModal() {
       {quickView?.mediaType === 'person' ? (
         <PersonQuickViewContent
           key={`person:${quickView.id}`}
+          id={quickView.id}
+          onClose={closeQuickView}
+          closeButton={<QuickViewCloseButton onClose={closeQuickView} />}
+        />
+      ) : quickView?.mediaType === 'collection' ? (
+        <CollectionQuickViewContent
+          key={`collection:${quickView.id}`}
           id={quickView.id}
           onClose={closeQuickView}
           closeButton={<QuickViewCloseButton onClose={closeQuickView} />}
@@ -106,6 +118,8 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
   const [error, setError] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
   const [nonce, setNonce] = useState(0);
+  // Re-fetch when the region changes (the strip's "Change region").
+  const regionCode = useRegionStore((s) => s.regionCode);
 
   useEffect(() => {
     // No synchronous setState here: `loading` already inits to true and the
@@ -114,7 +128,8 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
     // click handler before bumping `nonce`.
     const controller = new AbortController();
 
-    fetch(`/api/v1/titles/${mediaType}/${id}`, { signal: controller.signal })
+    const q = regionCode ? `?region=${encodeURIComponent(regionCode)}` : '';
+    fetch(`/api/v1/titles/${mediaType}/${id}${q}`, { signal: controller.signal })
       .then(async (res) => {
         // Route envelope is `{ ok: true, data }` / `{ ok: false, error }`.
         const json = (await res.json()) as
@@ -134,7 +149,7 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
       });
 
     return () => controller.abort();
-  }, [mediaType, id, nonce]);
+  }, [mediaType, id, nonce, regionCode]);
 
   const CloseButton = <QuickViewCloseButton onClose={onClose} />;
 
@@ -186,31 +201,9 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
   }
 
   // ----- Loaded -----
-  const {
-    details,
-    contentRating,
-    trailer,
-    providers,
-    providerSourceNote,
-    justWatchUrl,
-    fallbackRegion,
-    region,
-    collection,
-    tvSeasons,
-  } = data;
+  const { details, trailer, collection, tvSeasons } = data;
   const posterUrl = buildImageUrl(details.posterPath, 'w342');
   const backdropUrl = buildImageUrl(details.backdropPath, 'w780');
-  const typeLabel = mediaType === 'tv' ? 'TV Series' : 'Movie';
-
-  // ProviderSection renders null when there's genuinely nothing to show (note
-  // is "ok"/"fallback_*" and every bucket is empty). Mirror that here so we
-  // don't leave an empty bordered container behind.
-  const showProviders =
-    providerSourceNote === 'region_missing' ||
-    providerSourceNote === 'no_providers' ||
-    providers.streaming.length > 0 ||
-    providers.rent.length > 0 ||
-    providers.buy.length > 0;
 
   return (
     <div className="relative">
@@ -228,132 +221,89 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
           />
         </div>
       ) : (
-        <div className="relative w-full aspect-[16/7] bg-muted overflow-hidden">
+        <div className="relative w-full aspect-[16/7] bg-card overflow-hidden">
           {backdropUrl && (
             <Image
               src={backdropUrl}
               alt=""
               fill
-              className="object-cover opacity-60"
+              className="object-cover object-top opacity-60"
               sizes="(max-width: 640px) 100vw, 672px"
             />
           )}
-          <div className="absolute inset-0 bg-linear-to-t from-background via-background/40 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-b from-background/10 via-background/50 to-background" />
         </div>
       )}
 
       <div className="p-5 sm:p-6 flex flex-col gap-5">
-        {/* Poster + primary meta */}
-        <div className="flex gap-4">
+        {/* Poster + the same header as the title page */}
+        <div className="flex gap-4 sm:gap-5">
           {posterUrl && (
-            <div className="relative -mt-16 w-24 sm:w-28 shrink-0 aspect-[2/3] rounded-lg overflow-hidden border border-border/40 shadow-xl bg-muted">
+            <div className="relative -mt-20 w-24 sm:w-32 shrink-0 self-start aspect-[2/3] rounded-md overflow-hidden border border-foreground/10 shadow-elevation-card bg-card">
               <Image
                 src={posterUrl}
-                alt={details.title}
+                alt={`${details.title} poster`}
                 fill
                 className="object-cover"
-                sizes="112px"
+                sizes="128px"
               />
             </div>
           )}
-
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
-            <h2 className="text-h3 text-foreground leading-tight">
-              {details.title}
-            </h2>
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground font-medium">
-              {details.year && <span>{details.year}</span>}
-              <span className="uppercase text-xs font-semibold tracking-wide text-muted-foreground/80">
-                {typeLabel}
-              </span>
-              {contentRating && (
-                <span className="border border-muted-foreground/30 px-1.5 rounded text-xs leading-5 uppercase">
-                  {contentRating}
-                </span>
-              )}
-              {details.runtimeMinutes ? (
-                <span>{formatRuntime(details.runtimeMinutes)}</span>
-              ) : null}
-            </div>
-
-            {details.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-1">
-                {details.genres.map((g) => (
-                  <span
-                    key={g.id}
-                    className="px-2.5 py-0.5 bg-secondary/50 text-secondary-foreground rounded-full text-xs font-semibold border border-border/40"
-                  >
-                    {g.name}
-                  </span>
-                ))}
-              </div>
-            )}
+          <div className="flex-1 min-w-0">
+            <TitleHeader titleData={data} aggregate={null} compact />
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Actions — trailer is the one filled (accent) button, like the page. */}
+        <div className="flex flex-wrap items-center gap-2">
           {trailer && (
-            <Button
-              variant="secondary"
-              onClick={() => setShowTrailer((v) => !v)}
-              className="gap-2"
-            >
-              {showTrailer ? (
-                <EyeOff className="w-4 h-4" />
-              ) : (
-                <Play className="w-4 h-4" />
-              )}
+            <Button onClick={() => setShowTrailer((v) => !v)} className="h-10 gap-2 px-4">
+              {showTrailer ? <EyeOff className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               <span>{showTrailer ? 'Hide trailer' : 'Watch trailer'}</span>
             </Button>
           )}
 
           {isAuthenticated && (
             <>
-              <AddToWatchlistButton mediaType={mediaType} mediaId={id} />
-              <FavoriteButton id={id} type={mediaType} showText={false} />
+              {/* fetchInitial: the payload is region data only, so per-user state is looked up here. */}
+              <AddToWatchlistButton mediaType={mediaType} mediaId={id} title={details.title} fetchInitial className={OUTLINE_BTN} />
+              {/* FavoriteButton ignores className; style it from the wrapper. */}
+              <div className="[&_button]:h-10 [&_button]:w-10 [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button:hover]:bg-secondary/60">
+                <FavoriteButton id={id} type={mediaType} showText={false} fetchInitial />
+              </div>
             </>
           )}
 
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => shareTitle(mediaType, id, details.title)}
+            aria-label="Share"
+            className={`${OUTLINE_BTN} w-10 px-0`}
+          >
+            <Share2 className="w-4 h-4" />
+          </Button>
+
           {/* The popup is global (store-driven), so close it on navigate or
               it would stay open over the title page. */}
-          <Button asChild variant="secondary" className="gap-2">
+          <Button asChild variant="secondary" className={`${OUTLINE_BTN} ml-auto`}>
             <Link href={`/title/${mediaType}/${id}`} onClick={onClose}>
               <ArrowUpRight className="w-4 h-4" />
-              <span>Go to Page</span>
+              <span>Go to page</span>
             </Link>
           </Button>
         </div>
 
-        {/* Overview */}
+        {/* Same fallback chain + strip as the title page. */}
+        <AvailabilityStrip availability={toAvailability(data)} stacked />
+
         {details.overview && (
-          <p className="text-body-regular text-muted-foreground/90 leading-relaxed">
-            {details.overview}
-          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{details.overview}</p>
         )}
 
-        {/* Provider availability */}
-        {showProviders && (
-          <div className="rounded-lg bg-muted/10 border border-border/40 px-4">
-            <ProviderSection
-              region={region}
-              providers={providers}
-              providerSourceNote={providerSourceNote}
-              justWatchUrl={justWatchUrl}
-              fallbackRegion={fallbackRegion}
-            />
-          </div>
-        )}
-
-        {/* Movie: the franchise it belongs to. Full width to line up with
-            the provider box above. */}
+        {/* Movie: the franchise it belongs to — opens the collection Quick View in place. */}
         {collection && (
-          <CollectionCard
-            collection={collection}
-            onClick={onClose}
-            className="max-w-none"
-          />
+          <CollectionCard collection={collection} className="max-w-none" />
         )}
 
         {/* TV: seasons with episode counts + estimated run times. */}

@@ -1,5 +1,5 @@
 import React from "react";
-import Link from "next/link";
+import { QuickViewLink } from "@/components/watchly/QuickViewLink";
 import Image from "next/image";
 import { buildImageUrl } from "@/lib/tmdb";
 import { cn } from "@/lib/cn";
@@ -12,7 +12,7 @@ interface CollectionCardProps {
     backdropPath: string | null;
   } | null;
   className?: string;
-  /** e.g. close the Quick View popup when navigating from it. */
+  /** Extra click handler (runs before the Quick View opens). */
   onClick?: () => void;
 }
 
@@ -23,7 +23,8 @@ export function CollectionCard({ collection, className, onClick }: CollectionCar
   const backdropUrl = buildImageUrl(collection.backdropPath, "w500");
 
   return (
-    <Link
+    // Opens the collection Quick View; modified clicks still open the page.
+    <QuickViewLink
       href={`/collection/${collection.id}`}
       onClick={onClick}
       className={cn(
@@ -70,6 +71,6 @@ export function CollectionCard({ collection, className, onClick }: CollectionCar
           {collection.name}
         </h3>
       </div>
-    </Link>
+    </QuickViewLink>
   );
 }

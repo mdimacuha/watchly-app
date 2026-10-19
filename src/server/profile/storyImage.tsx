@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import type { ReactNode } from 'react';
 import type { ProfileShowcase } from '@/actions/profile';
 import { billingLine, estDate, memberCardModel, nameOf } from '@/components/profile/profileModel';
-import { ACCENTS, isAccentSlug } from '@/constants/accentColors';
+import { ACCENTS, getAccent } from '@/constants/accentColors';
 import { isVerifiedAccount } from '@/constants/verifiedAccounts';
 import { buildImageUrl } from '@/lib/tmdb';
 import { SITE_URL } from '@/lib/seo';
@@ -112,7 +112,7 @@ export async function renderProfileStory(showcase: ProfileShowcase, origin: stri
   const { overview } = showcase;
   const p = overview.profile;
   const [fonts, wordmark, avatarSrc] = await Promise.all([loadFonts(), loadWordmark(), loadAvatar(p.avatarUrl, origin)]);
-  const accent = isAccentSlug(p.accentColor) ? ACCENTS[p.accentColor].primary : ACCENTS.blue.primary;
+  const accent = getAccent(p.accentColor)?.primary ?? ACCENTS.blue.primary;
   const { feature, featureLabel, tally, stamps, country } = memberCardModel(showcase);
   const hero = feature ? buildImageUrl(feature.backdropPath ?? feature.posterPath, 'w1280') : null;
   const [g1, g2] = avatarGradient(`${p.firstName ?? ''}${p.lastName ?? ''}` || '?');
@@ -191,7 +191,7 @@ export async function renderProfileStory(showcase: ProfileShowcase, origin: stri
               </div>
             </div>
 
-            {p.bio && <div style={{ display: 'flex', fontSize: 32, marginTop: 22, lineHeight: 1.35 }}>{p.bio.slice(0, 160)}</div>}
+            {/* No bio on the story: the billing line says who they are as a viewer. */}
             <div style={{ display: 'flex', fontSize: 28, marginTop: 24, paddingLeft: 20, borderLeft: `5px solid ${accent}`, lineHeight: 1.35 }}>
               {billingLine(showcase)}
             </div>
@@ -240,7 +240,7 @@ export async function renderProfileStory(showcase: ProfileShowcase, origin: stri
         </div>
 
         {/* By the numbers — takes the remaining height and clips, so an
-            unusually tall card (long bio, wrapped lines) can never push the
+            unusually tall card (long name, wrapped lines) can never push the
             stats into the footer. */}
         <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 28, marginBottom: 16 }}>

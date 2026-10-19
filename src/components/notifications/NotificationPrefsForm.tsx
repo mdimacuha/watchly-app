@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { UserPlus, Sparkles } from 'lucide-react';
+import { UserPlus, Sparkles, BellRing } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/hooks/useToast';
 import { updateNotificationPreferencesAction } from '@/actions/notifPreferences';
@@ -32,6 +32,13 @@ const ROWS: Row[] = [
     label: 'Activity from people you follow',
     description:
       "When someone you follow adds a title, favorites something, or makes a new watchlist. Throttled so you don't get spammed.",
+  },
+  {
+    key: 'title_alerts',
+    icon: BellRing,
+    label: 'Title alerts',
+    description:
+      'The "Notify me when" alerts you set on titles: a title starts streaming, leaves a service, or a new season airs.',
   },
 ];
 

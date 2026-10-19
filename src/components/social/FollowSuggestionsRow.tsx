@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import { FollowButton } from './FollowButton';
 import type { PublicUserCard } from '@/services/social';
 
@@ -31,6 +32,7 @@ export function FollowSuggestionsRow({
           </h3>
         </div>
       )}
+      <ArrowStrip label="suggested people">
       <div className="overflow-x-auto scrollbar-hover -mx-4 px-4 snap-x snap-mandatory">
         <div className="flex gap-3 min-w-max pb-2">
           {suggestions.map((u) => (
@@ -38,6 +40,7 @@ export function FollowSuggestionsRow({
           ))}
         </div>
       </div>
+      </ArrowStrip>
     </section>
   );
 }

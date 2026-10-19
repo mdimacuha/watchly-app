@@ -13,6 +13,12 @@ export interface SearchResponseItem {
     logo_path: string | null;
     provider_id?: number;
   }[];
+  /**
+   * True when providers were looked up for the user's region. With empty
+   * `providerBadges` it means "not available in your region"; unset means
+   * availability wasn't fetched (show nothing).
+   */
+  availabilityChecked?: true;
 }
 
 /** A person matching the query (search page "People" row). */

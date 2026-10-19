@@ -7,10 +7,10 @@ import type {
   SearchResponseItem,
 } from '@/types/tmdb';
 import { getUserRegion } from '@/services/preferences';
-import { getJustWatchOffers } from '@/services/justwatch';
 import { cleanProviderName } from '@/utils/providers';
 import { getProvidersCatalog } from '@/server/tmdb/providersCatalog';
 import { getPersonTopCredits } from '@/services/tmdb/person';
+import { getCardBadges, type BadgeTarget, type CardBadge } from '@/services/providers/cardBadges';
 
 export interface SearchParams {
   q?: string;
@@ -22,164 +22,22 @@ export interface SearchParams {
   region?: string;
 }
 
-interface ProviderEntry {
-  provider_name: string;
-  logo_path: string | null;
-  /** TMDB provider id — absent for JustWatch-sourced badges. */
-  provider_id?: number;
-}
+type ProviderEntry = CardBadge;
 
-// Normalize raw TMDB provider rows and dedupe so the badge strip on cards
-// doesn't show "Amazon Prime Video" + "Amazon Prime Video With Ads" as two
-// separate pills.
-function cleanProviders(
-  rows: { provider_name: string; logo_path: string | null; provider_id?: number }[],
-): ProviderEntry[] {
-  const seen = new Set<string>();
-  const out: ProviderEntry[] = [];
-  for (const r of rows) {
-    const name = cleanProviderName(r.provider_name);
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ provider_name: name, logo_path: r.logo_path, provider_id: r.provider_id });
-  }
-  return out;
-}
-
-// JustWatch fallback for search/discover cards when TMDB has no providers for
-// the user's region. Returns the same `ProviderEntry[]` shape the rest of
-// the search service expects.
-async function fetchJustWatchProviders(
-  item: SearchResult,
-  region: string,
-): Promise<ProviderEntry[] | null> {
-  if (item.mediaType !== 'movie' && item.mediaType !== 'tv') return null;
-
-  const title =
-    item.mediaType === 'movie' ? item.title : item.name;
-  const date =
-    item.mediaType === 'movie' ? item.releaseDate : item.firstAirDate;
-  const year = date ? new Date(date).getFullYear().toString() : null;
-  if (!title) return null;
-
-  const fallback = await getJustWatchOffers({
-    tmdbId: item.id,
-    mediaType: item.mediaType,
-    title,
-    year,
-    region,
-  });
-  if (!fallback) return null;
-
-  // JustWatch already runs names through cleanProviderName, so no second pass.
-  if (fallback.providers.streaming.length > 0) {
-    return fallback.providers.streaming.map(p => ({
-      provider_name: p.provider_name,
-      logo_path: p.logo_path,
-    }));
-  }
-  if (fallback.providers.rent.length > 0 || fallback.providers.buy.length > 0) {
-    return [{ provider_name: 'Rent', logo_path: null }];
-  }
-  return null;
-}
-
+// Card badges (user's region only, JustWatch fallback) — shared with the
+// collection and artist pages via services/providers/cardBadges.
 async function fetchProvidersForResults(
   results: SearchResult[],
-  region: string
+  region: string,
 ): Promise<Map<string, ProviderEntry[]>> {
-  const providersMap = new Map<string, ProviderEntry[]>();
-
-  // Only fetch for movies and tv shows
-  const items = results.filter(
-    item => item.mediaType === 'movie' || item.mediaType === 'tv'
-  );
-
-  if (items.length === 0) return providersMap;
-
-  // We limit concurrency to avoid hitting rate limits too hard
-  // Fetch in batches of 5
-  const batchSize = 5;
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-
-    await Promise.all(
-      batch.map(async item => {
-        try {
-          const result =
-            item.mediaType === 'movie'
-              ? await movie.watchProviders(item.id)
-              : await tv.watchProviders(item.id);
-
-          const regionData = result.results?.[region];
-
-          const flatrateLike = [
-            ...(regionData?.flatrate || []),
-            ...(regionData?.ads || []),
-            ...(regionData?.free || []),
-          ];
-          const hasRentOrBuy =
-            (regionData?.rent?.length ?? 0) > 0 ||
-            (regionData?.buy?.length ?? 0) > 0;
-
-          if (flatrateLike.length > 0) {
-            providersMap.set(
-              `${item.mediaType}-${item.id}`,
-              cleanProviders(flatrateLike),
-            );
-            return;
-          }
-
-          if (hasRentOrBuy) {
-            providersMap.set(`${item.mediaType}-${item.id}`, [
-              { provider_name: 'Rent', logo_path: null },
-            ]);
-            return;
-          }
-
-          // TMDB has no data for this region. Tier 2: JustWatch. Tier 3:
-          // TMDB US as a last-resort fallback so titles JustWatch doesn't
-          // index (e.g. Lost Girl) still get badges. Order matters — the old
-          // silent US fallback caused Lost-in-PH to show Hulu; running
-          // JustWatch first fixes that.
-          let fallbackProviders = await fetchJustWatchProviders(item, region);
-
-          if (!fallbackProviders && region !== "US") {
-            const us = result.results?.["US"];
-            const usFlatrateLike = [
-              ...(us?.flatrate || []),
-              ...(us?.ads || []),
-              ...(us?.free || []),
-            ];
-            if (usFlatrateLike.length > 0) {
-              fallbackProviders = cleanProviders(usFlatrateLike);
-            } else if (
-              (us?.rent?.length ?? 0) > 0 ||
-              (us?.buy?.length ?? 0) > 0
-            ) {
-              fallbackProviders = [{ provider_name: "Rent", logo_path: null }];
-            }
-          }
-
-          if (fallbackProviders) {
-            providersMap.set(
-              `${item.mediaType}-${item.id}`,
-              fallbackProviders,
-            );
-          }
-        } catch (error: unknown) {
-          // Silently fail for individual provider fetches
-          console.warn(
-            `Failed to fetch providers for ${item.mediaType} ${item.id}`,
-            error
-          );
-        }
-      })
-    );
+  const targets: BadgeTarget[] = [];
+  for (const item of results) {
+    if (item.mediaType !== 'movie' && item.mediaType !== 'tv') continue;
+    const title = item.mediaType === 'movie' ? item.title : item.name;
+    const date = item.mediaType === 'movie' ? item.releaseDate : item.firstAirDate;
+    targets.push({ mediaType: item.mediaType, id: item.id, title: title ?? '', year: date ? String(new Date(date).getFullYear()) : null });
   }
-
-  return providersMap;
+  return getCardBadges(targets, region);
 }
 
 function mapToResponseItem(
@@ -204,7 +62,8 @@ function mapToResponseItem(
         : null;
   const year = date ? new Date(date).getFullYear().toString() : undefined;
 
-  const itemProviders = providersMap.get(`${item.mediaType}-${item.id}`) || [];
+  const key = `${item.mediaType}-${item.id}`;
+  const itemProviders = providersMap.get(key) || [];
 
   // Format providers for response
   const providerBadges = itemProviders.map((p) => ({
@@ -233,6 +92,9 @@ function mapToResponseItem(
     genreIds:
       item.mediaType === 'movie' || item.mediaType === 'tv' ? item.genreIds : undefined,
     providerBadges,
+    // Set only when providers were looked up for this title (skipped or
+    // failed lookups leave it unset, so no "Not in your region" pill).
+    ...(providersMap.has(key) ? { availabilityChecked: true as const } : {}),
   };
 }
 

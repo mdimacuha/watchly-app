@@ -3,6 +3,9 @@ import { collection } from "@/server/tmdb/endpoints/collection";
 import { getJustWatchOffers } from "@/services/justwatch";
 import { cleanProviderName } from "@/utils/providers";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { z } from "zod";
+import { TmdbError } from "@/server/tmdb/errors";
+import { NotFoundAppError, ValidationAppError } from "@/utils/errors";
 
 export interface CollectionPart {
   id: number;
@@ -59,15 +62,22 @@ interface TmdbCollectionDetails {
   }[];
 }
 
-export async function getCollectionDetails(collectionId: string, region = "US"): Promise<CollectionPayload> {
+/**
+ * Collection + its films. Badges are looked up only when `region` is given;
+ * the (cached) collection page omits it and fills badges in client-side for
+ * the visitor's region (useRegionBadges), so no one country is baked into
+ * the HTML.
+ */
+export async function getCollectionDetails(collectionId: string, region?: string): Promise<CollectionPayload> {
   const data = await tmdbFetch<TmdbCollectionDetails>(`/collection/${collectionId}`);
 
-  // Fetch providers for all parts
+  // Fetch providers for all parts (only when a region was asked for)
   const partsWithProviders = await mapWithConcurrency(
     data.parts,
     5,
     async (part) => {
       let providerBadges: { provider_name: string; logo_path: string }[] = [];
+      if (!region) return { ...part, providerBadges };
       try {
         // Fetch providers for this specific movie
         type ProviderResult = { provider_name: string; logo_path: string };
@@ -101,20 +111,8 @@ export async function getCollectionDetails(collectionId: string, region = "US"):
               provider_name: p.provider_name,
               logo_path: p.logo_path ?? "",
             }));
-          } else if (region !== "US") {
-            // Tier 3: TMDB US flatrate as a last-resort fallback. Silent on
-            // cards since there's no room for a "showing US availability"
-            // note — matches the legacy Watchly behavior.
-            const us = providers.results?.["US"];
-            if (us?.flatrate && us.flatrate.length > 0) {
-              providerBadges = dedupeProviders(
-                us.flatrate.map((p) => ({
-                  provider_name: cleanProviderName(p.provider_name),
-                  logo_path: p.logo_path,
-                })),
-              );
-            }
           }
+          // No fallback to another country.
         }
       } catch (e) {
         // Ignore provider fetch errors to allow page to render without them
@@ -164,4 +162,88 @@ export async function getTrendingCollections(page = 1) {
 
 export async function getCollectionImages(id: number) {
   return collection.images(id);
+}
+
+// ---------------------------------------------------------------------------
+// Quick View — a light collection preview (no per-film provider lookups)
+// ---------------------------------------------------------------------------
+
+export interface CollectionQuickViewPart {
+  id: number;
+  title: string;
+  year: string | null;
+  posterPath: string | null;
+  voteAverage: number | null;
+  /** Minutes; null when TMDB has no runtime yet (e.g. unreleased). */
+  runtimeMinutes: number | null;
+}
+
+export interface CollectionQuickViewPayload {
+  id: number;
+  name: string;
+  overview: string;
+  posterPath: string | null;
+  backdropPath: string | null;
+  /** Films in release order; unreleased (no date) last. */
+  parts: CollectionQuickViewPart[];
+  /** Sum of the known runtimes, minutes. */
+  totalRuntimeMinutes: number;
+  /** e.g. "1973–2023"; null when no film has a date. */
+  yearSpan: string | null;
+}
+
+const collectionIdSchema = z.coerce.number().int().positive();
+
+/**
+ * Collection preview for the Quick View popup: details plus each film's
+ * runtime (one cached TMDB detail per film, 6 at a time — collections are
+ * small). Region-agnostic: no provider lookups, unlike getCollectionDetails.
+ */
+export async function getCollectionQuickView(id: string): Promise<CollectionQuickViewPayload> {
+  const parsed = collectionIdSchema.safeParse(id);
+  if (!parsed.success) throw new ValidationAppError("Invalid collection id");
+
+  let data: TmdbCollectionDetails;
+  try {
+    data = await tmdbFetch<TmdbCollectionDetails>(`/collection/${parsed.data}`);
+  } catch (err) {
+    if (err instanceof TmdbError && err.status === 404) throw new NotFoundAppError("Collection not found");
+    throw err;
+  }
+
+  const ordered = [...data.parts].sort((a, b) => {
+    if (!a.release_date) return 1;
+    if (!b.release_date) return -1;
+    return a.release_date.localeCompare(b.release_date);
+  });
+
+  const runtimes = await mapWithConcurrency(ordered, 6, (p) =>
+    tmdbFetch<{ runtime?: number | null }>(`/movie/${p.id}`)
+      .then((d) => d.runtime || null)
+      .catch(() => null),
+  );
+
+  const parts: CollectionQuickViewPart[] = ordered.map((p, i) => ({
+    id: p.id,
+    title: p.title,
+    year: p.release_date ? p.release_date.slice(0, 4) : null,
+    posterPath: p.poster_path,
+    voteAverage: p.vote_average || null,
+    runtimeMinutes: runtimes[i],
+  }));
+
+  const years = parts.map((p) => p.year).filter((y): y is string => !!y);
+  const first = years[0];
+  const last = years[years.length - 1];
+
+  return {
+    id: data.id,
+    name: data.name,
+    overview: data.overview,
+    posterPath: data.poster_path,
+    backdropPath: data.backdrop_path,
+    parts,
+    totalRuntimeMinutes: parts.reduce((n, p) => n + (p.runtimeMinutes ?? 0), 0),
+    yearSpan: first ? (first === last ? first : `${first}–${last}`) : null,
+  };
 }

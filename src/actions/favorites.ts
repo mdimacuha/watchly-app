@@ -4,6 +4,17 @@ import { getSession } from '@/server/auth/session';
 import { addFavorite, getFavorites, isFavorite, removeFavorite, type FavoriteType } from '@/services/favorites';
 import { getEnrichedFavorites } from '@/services/favorites/enrich';
 import { revalidatePath } from 'next/cache';
+import {
+  addToShelf,
+  createShelf,
+  deleteShelf,
+  listShelves,
+  removeFromShelf,
+  setItemShelves,
+  updateShelf,
+} from '@/services/favorites/shelves';
+import type { CreateShelfInput, UpdateShelfInput } from '@/services/favorites/validators';
+import { AppError } from '@/utils/errors';
 
 export async function toggleFavoriteAction(
   id: string,
@@ -66,4 +77,54 @@ export async function getEnrichedFavoritesAction() {
     throw new Error('Unauthorized');
   }
   return getEnrichedFavorites(session.userId);
+}
+// ---------------------------------------------------------------------------
+// Shelves (favorites page). Results instead of throws: Next hides thrown
+// messages in production, and the UI needs e.g. "You already have a shelf
+// called …" to show the user. Optimistic UI rolls back on { ok: false }.
+// ---------------------------------------------------------------------------
+
+export type ShelfActionResult = { ok: true } | { ok: false; error: string };
+
+async function runShelf(fn: (userId: string) => Promise<unknown>): Promise<ShelfActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Please sign in again.' };
+  try {
+    await fn(session.userId);
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof AppError) return { ok: false, error: err.message };
+    console.error('Shelf action failed:', err);
+    return { ok: false, error: 'Something went wrong. Please try again.' };
+  }
+}
+
+export async function listShelvesAction() {
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized');
+  return listShelves(session.userId);
+}
+
+export async function createShelfAction(input: CreateShelfInput) {
+  return runShelf((userId) => createShelf(userId, input));
+}
+
+export async function updateShelfAction(shelfId: string, input: UpdateShelfInput) {
+  return runShelf((userId) => updateShelf(userId, shelfId, input));
+}
+
+export async function deleteShelfAction(shelfId: string) {
+  return runShelf((userId) => deleteShelf(userId, shelfId));
+}
+
+export async function addToShelfAction(shelfId: string, favoriteKeys: string[]) {
+  return runShelf((userId) => addToShelf(userId, { shelfId, favoriteKeys }));
+}
+
+export async function removeFromShelfAction(shelfId: string, favoriteKeys: string[]) {
+  return runShelf((userId) => removeFromShelf(userId, { shelfId, favoriteKeys }));
+}
+
+export async function setItemShelvesAction(favoriteKey: string, shelfIds: string[]) {
+  return runShelf((userId) => setItemShelves(userId, { favoriteKey, shelfIds }));
 }

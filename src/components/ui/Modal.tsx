@@ -4,6 +4,8 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/cn';
 import { X } from 'lucide-react';
+import { useAuthStore } from '@/client/stores/auth';
+import { AccentScope } from '@/components/profile/AccentScope';
 
 interface ModalProps {
   isOpen: boolean;
@@ -30,6 +32,8 @@ export function Modal({
   hideCloseButton = false,
   bodyClassName,
 }: ModalProps) {
+  const accentColor = useAuthStore((s) => s.user?.accentColor ?? null);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -52,9 +56,14 @@ export function Modal({
 
   // Portaled to <body>: a transformed ancestor (e.g. a 3D-tilt card) turns
   // `position: fixed` into "relative to that ancestor", which clipped and
-  // mispositioned modals opened from inside it.
+  // mispositioned modals opened from inside it. That also puts modals outside
+  // the layout's AccentScope, so the root re-applies the viewer's accent
+  // (a nested AccentScope inside a modal still wins).
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+    <AccentScope
+      accentColor={accentColor}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+    >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
@@ -86,7 +95,7 @@ export function Modal({
         )}
         <div className={cn('min-w-0 flex-1 overflow-auto overflow-x-hidden p-0', bodyClassName)}>{children}</div>
       </div>
-    </div>,
+    </AccentScope>,
     document.body,
   );
 }

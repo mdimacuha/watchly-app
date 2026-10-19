@@ -1,4 +1,5 @@
-import { getMyProfileAction, getProfileShowcaseAction } from '@/actions/profile';
+import { getLockedProfileAction, getMyProfileAction, getProfileShowcaseAction } from '@/actions/profile';
+import { LockedProfile } from '@/components/profile/LockedProfile';
 import { MemberProfile } from '@/components/profile/MemberProfile';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { requireUser } from '@/server/auth/requireUser';
@@ -19,6 +20,16 @@ export default async function MyProfilePage({
   const { as } = await searchParams;
   const preview = as === 'visitor';
   const me = await getMyProfileAction();
+  // A guest can't open a private / followers-only profile, so the preview of
+  // one is the locked view they'd get.
+  if (preview && me.profileVisibility !== 'public') {
+    const locked = await getLockedProfileAction(me.username, { asGuest: true });
+    return (
+      <AccentScope accentColor={locked.accentColor} className="px-4 sm:px-8 py-10 max-w-5xl mx-auto w-full">
+        <LockedProfile profile={locked} viewerSignedIn={false} preview />
+      </AccentScope>
+    );
+  }
   const showcase = await getProfileShowcaseAction(me.username, { asGuest: preview });
 
   return (

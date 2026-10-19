@@ -13,7 +13,12 @@ import { eq, or } from 'drizzle-orm';
 const REMEMBER_ME_TTL_DAYS = 30;
 const SESSION_TTL_DAYS = 1;
 
-export async function signIn(input: SignInInput) {
+/** The client's user-agent, as stored on a session (display only; capped). */
+export const sessionUserAgent = (raw: string | null | undefined): string | null =>
+  raw ? raw.trim().slice(0, 300) || null : null;
+
+/** `userAgent`: the request's User-Agent, stored on the session for Settings → Sessions. */
+export async function signIn(input: SignInInput, opts: { userAgent?: string | null } = {}) {
   const { identifier, password, rememberMe } = signInSchema.parse(input);
 
   // Look up user by email or username
@@ -49,6 +54,7 @@ export async function signIn(input: SignInInput) {
     userId: user.id,
     sessionToken,
     expiresAt: sessionExpiresAt,
+    userAgent: sessionUserAgent(opts.userAgent),
   });
 
   const [regionCode, theme] = await Promise.all([

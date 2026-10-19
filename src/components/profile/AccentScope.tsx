@@ -1,9 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { getAccent, type AccentSlug } from '@/constants/accentColors';
+import { getAccent, type AccentColor } from '@/constants/accentColors';
 
 interface AccentScopeProps {
   /** Accent slug for the surface owner. `null` = default Watchly accent (no override). */
-  accentColor: AccentSlug | null | undefined;
+  accentColor: AccentColor | null | undefined;
   children: ReactNode;
   className?: string;
   /** Render as a different element if the default `<div>` introduces layout issues. */
@@ -52,6 +52,11 @@ export function AccentScope({
     '--color-primary-active': accent.primaryActive,
     '--color-primary-soft': accent.primarySoft,
     '--color-ring': accent.ring,
+    // Custom colours flip text to dark on light accents; presets keep the default.
+    ...(accent.primaryForeground && {
+      '--primary-foreground': accent.primaryForeground,
+      '--color-primary-foreground': accent.primaryForeground,
+    }),
   };
 
   const Tag = as;

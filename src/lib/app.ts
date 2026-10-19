@@ -21,7 +21,7 @@ const PATHS = {
   ME: '/me',
   SETTINGS: {
     ROOT: '/settings',
-    REGION: '/settings/region',
+    REGION: '/settings#settings-watching',
   },
   INTERNAL: {
     DOCUMENTATION: '/docs',

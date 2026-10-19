@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-/** Titles, or a person (cast/crew) — 'person' opens the people preview. */
-export type QuickViewType = 'movie' | 'tv' | 'person' | 'watchlist';
+/** Titles, a person ('person' → people preview), a watchlist, or a collection. */
+export type QuickViewType = 'movie' | 'tv' | 'person' | 'watchlist' | 'collection';
 
 // ---------------------------------------------------------------------------
 // State

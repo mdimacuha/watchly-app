@@ -22,6 +22,10 @@ interface FollowButtonProps {
   className?: string;
   /** Compact = icon-only-on-hover variant for follower list rows. */
   size?: 'default' | 'sm';
+  /** Target needs to approve follows (non-public profile): optimistic state is "Requested". */
+  requiresApproval?: boolean;
+  /** Called with each settled status (after the server answers or a rollback). */
+  onStatusChange?: (status: FollowStatus | null) => void;
 }
 
 /**
@@ -36,8 +40,14 @@ export function FollowButton({
   blocked,
   className,
   size = 'default',
+  requiresApproval = false,
+  onStatusChange,
 }: FollowButtonProps) {
-  const [status, setStatus] = useState<FollowStatus | null>(initialStatus);
+  const [status, setLocalStatus] = useState<FollowStatus | null>(initialStatus);
+  const setStatus = (next: FollowStatus | null) => {
+    setLocalStatus(next);
+    onStatusChange?.(next);
+  };
   const [pending, startTransition] = useTransition();
   const [hovering, setHovering] = useState(false);
   const toast = useToast();
@@ -73,7 +83,8 @@ export function FollowButton({
     }
     // Not following → request. The server decides accepted vs pending
     // based on the target's profile visibility.
-    setStatus('accepted'); // assume public; corrected by server response
+    // Optimistic guess, corrected by the server response.
+    setStatus(requiresApproval ? 'pending' : 'accepted');
     startTransition(async () => {
       try {
         const next = await followAction(targetUserId);

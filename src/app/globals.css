@@ -19,6 +19,45 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Pointer on everything clickable. Tailwind v4's preflight resets buttons
+   to `cursor: default`, so without this only elements that remembered a
+   `cursor-pointer` class showed one. Covers native controls and the ARIA
+   widgets we build (tabs, options, menu items, radios, checkboxes, the star
+   slider). Disabled controls get `not-allowed`. In the base layer, so an
+   explicit cursor utility on an element (e.g. cursor-grab) still wins. */
+@layer base {
+  button:not(:disabled),
+  [role='button'],
+  [role='link'],
+  [role='tab'],
+  [role='option'],
+  [role='menuitem'],
+  [role='menuitemcheckbox'],
+  [role='menuitemradio'],
+  [role='checkbox'],
+  [role='radio'],
+  [role='switch'],
+  [role='slider'],
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled),
+  input[type='color']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='button']:not(:disabled),
+  input[type='reset']:not(:disabled),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  :is(button, select, input, [role='button'], [role='tab'], [role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='checkbox'], [role='radio'], [role='switch'], [role='slider']):is(:disabled, [aria-disabled='true']) {
+    cursor: not-allowed;
+  }
+}
+
 ::selection {
   background-color: var(--primary);
   color: #ffffff;

@@ -80,7 +80,7 @@ export async function recordActivity(
     // like region_update have actorId=null and don't belong in social
     // feeds). Errors here never block the primary action — fan-out is
     // strictly a notification convenience.
-    if (actorId) {
+    if (actorId && FANOUT_TYPES.has(event.type)) {
       await fanoutFollowerNotifications(actorId, event).catch((err) => {
         logger.warn('[activity] fanout failed', err);
       });
@@ -91,6 +91,16 @@ export async function recordActivity(
 }
 
 const FOLLOW_ACTIVITY_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+
+// Activity worth telling followers about (each has a bell message in
+// NotificationRow). Follows and region changes stay in the actor's own feed.
+const FANOUT_TYPES = new Set<RecordableActivity['type']>([
+  'favorite',
+  'watchlist_add',
+  'watchlist_bulk_add',
+  'watchlist_create',
+  'review',
+]);
 
 /**
  * Insert a `follow_activity` notification for every follower of `actorId`

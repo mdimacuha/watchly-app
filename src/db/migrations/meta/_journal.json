@@ -232,6 +232,55 @@
       "when": 1792177343259,
       "tag": "0032_add_profile_card_feature",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792407804512,
+      "tag": "0033_half_star_review_ratings",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792420037386,
+      "tag": "0034_favorite_shelves",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792424040188,
+      "tag": "0035_title_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792426613503,
+      "tag": "0036_favorite_shelf_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792429203725,
+      "tag": "0037_review_spoilers",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792430181742,
+      "tag": "0038_session_user_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792432131364,
+      "tag": "0039_featured_titles",
+      "breakpoints": true
     }
   ]
 }

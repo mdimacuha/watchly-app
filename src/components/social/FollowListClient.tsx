@@ -6,7 +6,7 @@ import { Search, Users } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { cn } from '@/lib/cn';
-import { isAccentSlug } from '@/constants/accentColors';
+import { normalizeAccentColor } from '@/constants/accentColors';
 import { isVerifiedAccount } from '@/constants/verifiedAccounts';
 import { VerifiedBadge } from '@/components/profile/VerifiedBadge';
 import type { FollowStatus, PublicUserCard } from '@/services/social';
@@ -110,7 +110,7 @@ function PersonCard({ person }: { person: FollowListPerson }) {
 
   return (
     // Each card wears its person's accent — the member card's gradient edge.
-    <AccentScope accentColor={isAccentSlug(person.accentColor) ? person.accentColor : null}>
+    <AccentScope accentColor={normalizeAccentColor(person.accentColor)}>
       <div className="h-full rounded-xl bg-linear-to-br from-primary/70 via-primary/20 to-border p-px">
         <div className="relative flex h-full items-center gap-3 overflow-hidden rounded-xl bg-card p-3">
           <div aria-hidden className="pointer-events-none absolute inset-0 bg-linear-to-br from-primary/10 via-transparent to-transparent" />

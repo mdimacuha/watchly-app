@@ -3,7 +3,9 @@ import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatRelativeAgo } from '@/lib/format';
+import { getCountryName } from '@/lib/regions/countries';
 import type { NotificationItem } from '@/services/notifications';
+import type { TitleAlertNotification } from '@/services/notifications/getNotifications';
 
 interface NotificationRowProps {
   item: NotificationItem;
@@ -26,12 +28,21 @@ export function NotificationRow({ item }: NotificationRowProps) {
         {!item.isRead && (
           <span className="absolute -left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary" />
         )}
-        <UserAvatar
-          avatarUrl={item.actor.avatarUrl}
-          firstName={item.actor.displayName.split(' ')[0]}
-          lastName={item.actor.displayName.split(' ').slice(1).join(' ')}
-          size="md"
-        />
+        {item.actor ? (
+          <UserAvatar
+            avatarUrl={item.actor.avatarUrl}
+            firstName={item.actor.displayName.split(' ')[0]}
+            lastName={item.actor.displayName.split(' ').slice(1).join(' ')}
+            size="md"
+          />
+        ) : (
+          // Title alerts: the poster stands in for the avatar.
+          <div className="relative w-10 aspect-2/3 rounded overflow-hidden bg-muted">
+            {item.posterUrl && (
+              <Image src={item.posterUrl} alt="" fill className="object-cover" sizes="40px" />
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-w-0 pt-0.5">
@@ -57,7 +68,45 @@ export function NotificationRow({ item }: NotificationRowProps) {
   );
 }
 
+/** "Netflix", "Netflix and Max", "Netflix, Max and 2 more". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? 'a service';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  const rest = names.length - 2;
+  return `${names[0]}, ${names[1]} and ${rest === 1 ? names[2] : `${rest} more`}`;
+}
+
+function TitleAlertMessage({ item }: { item: TitleAlertNotification }) {
+  const title = <span className="text-foreground font-medium">{item.title ?? 'A title you follow'}</span>;
+  const where = getCountryName(item.region) || item.region;
+  const services = <span className="text-foreground">{joinNames(item.providers)}</span>;
+  switch (item.kind) {
+    case 'title_available':
+      return (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {title} is now streaming on {services}
+          {where ? ` in ${where}` : ''}.
+        </p>
+      );
+    case 'title_leaving':
+      return (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {title} is no longer on {services}
+          {where ? ` in ${where}` : ''}.
+        </p>
+      );
+    case 'title_new_season':
+      return (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {item.seasonNumber ? `Season ${item.seasonNumber} of ` : 'A new season of '}
+          {title} has started airing.
+        </p>
+      );
+  }
+}
+
 function NotificationMessage({ item }: { item: NotificationItem }) {
+  if (!item.actor) return <TitleAlertMessage item={item} />;
   const actor = item.actor.displayName;
 
   switch (item.kind) {
@@ -117,6 +166,20 @@ function NotificationMessage({ item }: { item: NotificationItem }) {
                   {' '}to the{' '}
                   <span className="text-foreground">{item.watchlistName}</span>{' '}
                   watchlist
+                </>
+              ) : null}
+              .
+            </p>
+          );
+        case 'review':
+          return (
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              <span className="text-foreground font-medium">{actor}</span>{' '}
+              reviewed <span className="text-foreground">{noun}</span>
+              {item.rating ? (
+                <>
+                  {' '}
+                  <span className="text-foreground">{item.rating}★</span>
                 </>
               ) : null}
               .

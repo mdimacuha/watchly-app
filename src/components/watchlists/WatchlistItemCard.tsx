@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { formatRuntime, formatYear, formatRelativeAgo } from '@/lib/format';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 import { useToast } from '@/hooks/useToast';
 import { toggleFavoriteAction } from '@/actions/favorites';
 import {
@@ -139,7 +140,7 @@ export function WatchlistItemCard({
         )}
 
         {/* Provider chip (top-right) */}
-        {item.provider && (
+        {item.provider ? (
           <div className="absolute top-2 right-2">
             <ProviderBadge
               providerId={item.provider.providerId}
@@ -147,6 +148,13 @@ export function WatchlistItemCard({
               size="sm"
             />
           </div>
+        ) : (
+          item.availabilityChecked && (
+            <div className="absolute top-2 right-2">
+              {/* Solid backdrop so the muted pill stays legible over the poster. */}
+              <NotInRegionPill className="bg-background/80" />
+            </div>
+          )
         )}
 
         {/* Not ranked by the curator yet (see watchlist_items.ranked_at). */}

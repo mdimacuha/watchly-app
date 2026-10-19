@@ -184,7 +184,13 @@ export function SearchField({ className, fetching = false, suggestionsData }: Se
           setDismissed(false);
         }}
         onKeyDown={handleKeyDown}
-        onFocus={() => setFocused(true)}
+        // Coming back to the box (after a pick closed the list, or Esc)
+        // reopens the suggestions for what's typed.
+        onFocus={() => {
+          setFocused(true);
+          setDismissed(false);
+        }}
+        onClick={() => setDismissed(false)}
         onBlur={() => setFocused(false)}
         placeholder="Search movies, TV, people or themes…"
         aria-label="Search movies, TV shows, people and themes"

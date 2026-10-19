@@ -22,6 +22,6 @@ export async function updateNotificationPreferencesAction(
   const session = await getSession();
   if (!session) throw new UnauthorizedAppError();
   const next = await updateNotificationPreferences(session.userId, input);
-  revalidatePath('/settings/notifications');
+  revalidatePath('/settings');
   return next;
 }

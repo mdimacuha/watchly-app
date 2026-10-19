@@ -338,7 +338,7 @@ async function mapRow(row: ActivityRowT, viewer: ActorView): Promise<ActivityIte
     case 'region_update': {
       return {
         ...base,
-        href: '/settings/region',
+        href: '/settings#settings-watching',
         kind: 'region_update',
         regionName: String(payload.regionName ?? 'Unknown'),
       };

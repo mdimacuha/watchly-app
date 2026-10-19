@@ -102,14 +102,37 @@ export function moderateText(
 
 /**
  * Pure-data helper exported for unit testability + the username
- * pipeline. Normalises the input and substring-matches against the
- * racial-offensive set. Returns true at the first match.
+ * pipeline. Substring-matches the racial-offensive set within each word
+ * (normalised, so "n!gg3r" and "x_slur_x" still hit), never across words:
+ * stripping every space joined the end of one ordinary word to the start of
+ * the next and blocked innocent prose. Runs of 1–2 character fragments are
+ * re-joined first, so spaced-out spellings ("s l u r", "s.l u.r") are still
+ * caught.
  */
 export function containsRacialOffensiveTerm(input: string): boolean {
-  const normalized = normalizeModerationText(input);
-  if (normalized.length === 0) return false;
-  for (const term of RACIAL_OFFENSIVE_TERMS) {
-    if (normalized.includes(term)) return true;
+  const words = input
+    .split(/\s+/)
+    .map(normalizeModerationText)
+    .filter((w) => w.length > 0);
+  if (words.length === 0) return false;
+
+  const candidates: string[] = [];
+  let run = '';
+  for (const w of words) {
+    if (w.length <= 2) {
+      run += w;
+      continue;
+    }
+    if (run) candidates.push(run);
+    run = '';
+    candidates.push(w);
+  }
+  if (run) candidates.push(run);
+
+  for (const c of candidates) {
+    for (const term of RACIAL_OFFENSIVE_TERMS) {
+      if (c.includes(term)) return true;
+    }
   }
   return false;
 }

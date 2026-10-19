@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   return handleRoute(async () => {
     const body = await request.json();
-    const { user, sessionToken, sessionExpiresAt } = await signUp(body);
+    const { user, sessionToken, sessionExpiresAt } = await signUp(body, { userAgent: request.headers.get('user-agent') });
 
     await setSessionCookie(sessionToken, sessionExpiresAt);
 

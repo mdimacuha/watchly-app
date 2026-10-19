@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 import { FavoriteButton } from '@/components/watchly/FavoriteButton';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButton';
@@ -25,6 +26,7 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
 
   const visible = item.providers.slice(0, MAX_VISIBLE_BADGES);
   const overflow = Math.max(0, item.providers.length - MAX_VISIBLE_BADGES);
+  const notInRegion = item.availabilityChecked === true && visible.length === 0;
   const idStr = String(item.tmdbId);
 
   return (
@@ -60,7 +62,7 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
         </div>
 
         {/* Provider strip — slide up on hover/focus. Identical to search. */}
-        {visible.length > 0 && (
+        {(visible.length > 0 || notInRegion) && (
           <div
             className={cn(
               'absolute inset-x-0 bottom-0 z-20 pointer-events-none',
@@ -85,6 +87,7 @@ export function ForYouCard({ item, className }: ForYouCardProps) {
                   +{overflow}
                 </span>
               )}
+              {notInRegion && <NotInRegionPill className="text-[9px]" />}
             </div>
           </div>
         )}

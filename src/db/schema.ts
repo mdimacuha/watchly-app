@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   numeric,
+  real,
   index,
   uniqueIndex,
   pgEnum,
@@ -69,6 +70,10 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'follow_accepted',
   'follow_back',
   'follow_activity',
+  // Title alerts (system notifications, no actor).
+  'title_available',
+  'title_leaving',
+  'title_new_season',
 ]);
 
 // Distinguishes one-shot token purposes stored in user_verification_codes.
@@ -193,6 +198,9 @@ export const userSessions = pgTable(
 
     sessionToken: text('session_token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    // Browser user-agent at sign-in, for the sessions list in Settings
+    // ("Chrome on Windows"). Null for sessions created before it was recorded.
+    userAgent: text('user_agent'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -328,7 +336,7 @@ export const userProfiles = pgTable(
     // Profile banner toggle. When true (default), /me and /user/[username]
     // render a blurred-collage banner derived from the user's top favorite
     // posters. Users can switch back to the plain accent strip from
-    // /settings/appearance.
+    // Settings → Appearance.
     bannerEnabled: boolean('banner_enabled').notNull().default(true),
 
     // Profile card highlight slot (see src/constants/cardFeature.ts). Null
@@ -339,6 +347,14 @@ export const userProfiles = pgTable(
     cardFeatureMediaType: text('card_feature_media_type'),
     cardFeatureMediaId: text('card_feature_media_id'),
     cardFeatureLabel: text('card_feature_label'),
+
+    // Feature presentation picks: up to 6 titles from the owner's favorites
+    // and watchlists, in display order (first gets the crown). Empty = the
+    // automatic ranking (favorites by the owner's own ratings).
+    featuredTitles: jsonb('featured_titles')
+      .$type<{ mediaType: 'movie' | 'tv'; mediaId: string }[]>()
+      .notNull()
+      .default([]),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -445,6 +461,60 @@ export const userFavorites = pgTable(
     ),
     uniqueFavorite: uniqueIndex('user_favorites_unique_idx').on(f.userId, f.favoriteId, f.favoriteType),
   })
+);
+
+// Shelves: user-named groups of favorites. A favorite can sit on many shelves
+// (favorite_shelf_items is the join). Deleting a shelf removes its links, never
+// the favorites; unfavoriting cascades the favorite off every shelf.
+export const favoriteShelves = pgTable(
+  'favorite_shelves',
+  {
+    // Client-generated (crypto.randomUUID) so the UI can open a new shelf
+    // before the server round-trip; validated as a uuid at the service.
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    // Accent slug for the spine colour (validated against ACCENT_SLUGS); null = neutral.
+    color: text('color'),
+    // Shown on the owner's public profile. Private by default: shelf names
+    // are often written for oneself. Applies even when favorites are hidden.
+    isPublic: boolean('is_public').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (s) => ({
+    userIdx: index('favorite_shelves_user_idx').on(s.userId, s.sortOrder),
+    // One shelf per name per user, case-insensitively.
+    uniqueName: uniqueIndex('favorite_shelves_user_name_unique_idx').on(s.userId, sql`lower(${s.name})`),
+  }),
+);
+
+export const favoriteShelfItems = pgTable(
+  'favorite_shelf_items',
+  {
+    shelfId: uuid('shelf_id')
+      .notNull()
+      .references(() => favoriteShelves.id, { onDelete: 'cascade' }),
+    favoriteId: uuid('favorite_id')
+      .notNull()
+      .references(() => userFavorites.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (i) => ({
+    pk: primaryKey({ columns: [i.shelfId, i.favoriteId] }),
+    // "Which shelves is this favorite on" + the unfavorite cascade.
+    favoriteIdx: index('favorite_shelf_items_favorite_idx').on(i.favoriteId),
+  }),
 );
 
 export const watchlists = pgTable(
@@ -600,6 +670,43 @@ export const notifications = pgTable(
       .on(n.userId)
       .where(sql`${n.readAt} IS NULL`),
   })
+);
+
+// "Notify me when" alerts on a title, for one region. A daily cron compares
+// the title's current streaming providers / latest season against the
+// snapshot and notifies on changes. The snapshot is taken when the alert is
+// created, so nothing fires for what's already true. No row = no alerts.
+export const titleAlerts = pgTable(
+  'title_alerts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    mediaType: watchlistMediaTypeEnum('media_type').notNull(),
+    mediaId: text('media_id').notNull(),
+    // ISO 3166-1 alpha-2 the alert watches (the user's region when set).
+    region: text('region').notNull(),
+    notifyStreaming: boolean('notify_streaming').notNull().default(false),
+    notifyLeaving: boolean('notify_leaving').notNull().default(false),
+    notifyNewSeason: boolean('notify_new_season').notNull().default(false),
+    // Streaming (flatrate) provider names in `region` at the last check.
+    lastProviders: jsonb('last_providers').$type<string[]>().notNull().default([]),
+    // Highest aired season number at the last check (tv only).
+    lastSeasonNumber: integer('last_season_number'),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (a) => ({
+    uniqueTitle: uniqueIndex('title_alerts_user_title_unique_idx').on(a.userId, a.mediaType, a.mediaId),
+    // The cron walks alerts, oldest check first.
+    checkIdx: index('title_alerts_checked_idx').on(a.lastCheckedAt),
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -826,10 +933,13 @@ export const userReviews = pgTable(
     titleId: text('title_id').notNull(),
     titleType: text('title_type').notNull(), // 'movie' | 'tv'
 
-    // 1–5 star rating (validated at the service boundary).
-    rating: integer('rating').notNull(),
+    // 0.5–5 star rating in half-star steps (validated at the service boundary).
+    rating: real('rating').notNull(),
     // Optional written review; null when the user left a rating only.
     body: text('body'),
+    // Author marked the written review as containing spoilers: readers see
+    // it hidden until they choose to reveal it.
+    isSpoiler: boolean('is_spoiler').notNull().default(false),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

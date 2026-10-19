@@ -1,179 +1,167 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
-import { buildImageUrl } from '@/lib/tmdb';
-import { formatRuntime } from '@/lib/format';
-import { TitlePagePayload } from '@/services/tmdb/title';
-import { TitleActions } from './TitleActions';
-import { ClientProviderSection } from './ClientProviderSection';
-import { TopCastRow } from './TopCastRow';
+import { X } from 'lucide-react';
+import { cn } from '@/lib/cn';
 import { CollectionCard } from './CollectionCard';
 import { TvSeasonsEpisodesPanel } from './TvSeasonsEpisodesPanel';
+import { ActionStack, PosterArt, titleBasics, type TitlePageProps } from './titleParts';
+import { TitleHeader } from './TitleHeader';
+import { AvailabilityStrip } from './AvailabilityStrip';
+import type { Availability } from './useTitleAvailability';
+import type { ReviewAggregate } from '@/services/reviews';
+import type { TitlePagePayload } from '@/services/tmdb/title';
 
-import { DetailsTab } from './tabs/DetailsTab';
-import { seriesSummaryParts } from '@/lib/seasons';
+// Backdrop band height → player height (16:9, capped so the title stays in reach).
+const BAND_HEIGHT = '360px';
+const PLAYER_HEIGHT = 'min(56.25vw, 78vh)';
+// The video mounts once the band has mostly opened, so it doesn't load into a sliver.
+const PLAYER_MOUNT_DELAY_MS = 350;
 
-interface TitleHeroProps {
-  titleData: TitlePagePayload;
-  onWatchTrailer?: () => void;
-}
+// The page hero: backdrop band with the poster breaking out of it on
+// desktop, full-bleed poster on mobile, then title → availability →
+// actions. When a video plays, the band grows into a 16:9 player and pushes
+// the rest down (the poster stops overlapping it). `aside` adds a third
+// column on wide screens.
+export function TitleHero({
+  titleData,
+  onWatchTrailer,
+  playing,
+  onClosePlayer,
+  aggregate,
+  availability,
+  aside,
+}: Pick<TitlePageProps, 'titleData' | 'onWatchTrailer' | 'playing' | 'onClosePlayer'> & {
+  aggregate: ReviewAggregate | null;
+  availability: Availability;
+  aside?: React.ReactNode;
+}) {
+  const b = titleBasics(titleData);
+  const [mounted, setMounted] = useState<string | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-export function TitleHero({ titleData, onWatchTrailer }: TitleHeroProps) {
-  const {
-    details,
-    contentRating,
-    trailer,
-    cast,
-    mediaType,
-    id,
-    infoPanelData,
-    collection,
-    tvSeasons,
-  } = titleData;
-  const posterUrl = buildImageUrl(details.posterPath, 'w500');
-  const backdropUrl = buildImageUrl(details.backdropPath, 'w1280');
-  const seriesSummary = tvSeasons
-    ? seriesSummaryParts(tvSeasons.seasons, details.runtimeMinutes)
-    : [];
+  // Mount the iframe after the band opens; Esc closes; focus the close button.
+  useEffect(() => {
+    if (!playing) return;
+    const t = setTimeout(() => setMounted(playing.key), PLAYER_MOUNT_DELAY_MS);
+    closeRef.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClosePlayer();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [playing, onClosePlayer]);
+  const showVideo = !!playing && mounted === playing.key;
 
   return (
-    <div className="relative w-full min-h-screen overflow-hidden">
-      {/* Background Image with Gradient Overlay. Pinned to a viewport-height
-          box at the top (not inset-0) so its object-cover crop doesn't
-          rescale/shift when the page grows (expanding seasons, tabs). The
-          bottom gradient fades it into the page background. */}
-      <div className="absolute inset-x-0 top-0 h-screen z-0">
-        {backdropUrl && (
+    <div className="w-full">
+      <div
+        className={cn(
+          'relative overflow-hidden bg-background transition-[height] duration-500 ease-out motion-reduce:transition-none',
+          playing ? 'block' : 'hidden md:block',
+        )}
+        style={{ height: playing ? PLAYER_HEIGHT : BAND_HEIGHT }}
+      >
+        {b.backdropUrl && (
           <Image
-            src={backdropUrl}
+            src={b.backdropUrl}
             alt=""
             fill
-            className="object-cover opacity-20"
+            priority
             sizes="100vw"
+            className={cn(
+              'object-cover object-top transition-opacity duration-500 motion-reduce:transition-none',
+              playing ? 'opacity-20' : 'opacity-60',
+            )}
           />
         )}
-        <div className="absolute inset-0 bg-linear-to-t from-background via-background/95 to-transparent" />
-        <div className="absolute inset-0 bg-linear-to-r from-background via-background/40 to-transparent" />
+        {!playing && <div className="absolute inset-0 bg-linear-to-b from-background/10 via-background/50 to-background" />}
+
+        {playing && (
+          <>
+            {showVideo && (
+              <iframe
+                key={playing.key}
+                className="absolute inset-0 h-full w-full"
+                src={`https://www.youtube.com/embed/${playing.key}?autoplay=1&rel=0`}
+                title={playing.name}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+              />
+            )}
+            <button
+              ref={closeRef}
+              type="button"
+              onClick={onClosePlayer}
+              className="absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-sm text-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-6 md:top-6"
+            >
+              <X className="h-4 w-4" /> Close
+            </button>
+          </>
+        )}
       </div>
 
-      <div className="relative z-10 container mx-auto px-4 py-8 md:py-12 flex flex-col gap-12">
-        {/* Top Section: Poster + Main Info */}
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          {/* Poster (Left) */}
-          <div className="w-full max-w-[350px] shrink-0 mx-auto md:mx-0 shadow-2xl rounded-lg overflow-hidden border border-border/20">
-            <div className="aspect-2/3 relative bg-muted">
-              {posterUrl ? (
-                <Image
-                  src={posterUrl}
-                  alt={details.title}
-                  fill
-                  className="object-cover"
-                  priority
-                  sizes="(max-width: 768px) 100vw, 350px"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-muted-foreground">
-                  No Poster
-                </div>
-              )}
-            </div>
+      <div className="container mx-auto px-0 md:px-8">
+        <div
+          className={cn(
+            'relative flex flex-col md:flex-row md:gap-10 transition-[margin] duration-500 ease-out motion-reduce:transition-none',
+            playing ? 'mt-6 md:mt-8' : 'md:-mt-56',
+          )}
+        >
+          <div className="relative md:w-[300px] shrink-0">
+            <PosterArt
+              src={b.posterUrl}
+              title={titleData.details.title}
+              priority
+              sizes="(max-width: 768px) 100vw, 300px"
+              className="w-full md:rounded-md md:border md:border-foreground/10 md:shadow-elevation-card"
+            />
+            <div className="md:hidden absolute inset-x-0 bottom-0 h-1/3 bg-linear-to-t from-background to-transparent" />
           </div>
 
-          {/* Info Column (Right) */}
-          <div className="flex-1 min-w-0 flex flex-col gap-8 w-full">
-            {/* Title & Meta */}
-            <div className="flex flex-col gap-3">
-              <h1 className="text-4xl md:text-5xl font-bold leading-tight tracking-tight text-foreground">
-                {details.title}
-              </h1>
-
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm md:text-base text-muted-foreground font-medium">
-                {details.year && <span>{details.year}</span>}
-                {contentRating && (
-                  <span className="border border-muted-foreground/30 px-1.5 rounded text-xs leading-5 uppercase">
-                    {contentRating}
-                  </span>
-                )}
-                {details.runtimeMinutes && (
-                  // TV runtime is per episode — label it so it doesn't read
-                  // as the show's total next to the series summary.
-                  <span>
-                    {formatRuntime(details.runtimeMinutes)}
-                    {mediaType === 'tv' && ' / ep'}
-                  </span>
-                )}
-                {/* TV: series size at a glance, e.g. "14 seasons · 308
-                    episodes · ~154h 0m total". Same math as Quick View. */}
-                {seriesSummary.length > 0 && <span>{seriesSummary.join(' · ')}</span>}
+          <div className="relative flex-1 min-w-0 flex flex-col gap-5 px-4 md:px-0 -mt-16 md:mt-0 md:pt-24">
+            {/* Title left, action column right; both above the providers. */}
+            <div className="flex flex-col md:flex-row md:items-end gap-5 md:gap-8">
+              <div className="flex-1 min-w-0">
+                <TitleHeader titleData={titleData} aggregate={aggregate} />
               </div>
-
-              {/* Genre Pills */}
-              <div className="flex flex-wrap gap-2 mt-1">
-                {details.genres.map(g => (
-                  <Link
-                    key={g.id}
-                    href={`/search?genre=${g.id}&type=${mediaType}`}
-                    aria-label={`Search ${g.name} ${mediaType === 'tv' ? 'shows' : 'movies'}`}
-                    className="px-3 py-1 bg-secondary/50 text-secondary-foreground rounded-full text-xs font-semibold backdrop-blur-sm border border-white/5 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  >
-                    {g.name}
-                  </Link>
-                ))}
-              </div>
+              <ActionStack titleData={titleData} onWatchTrailer={onWatchTrailer} className="shrink-0" />
             </div>
-
-            {/* Actions */}
-            <div className="flex flex-wrap items-center gap-4">
-              <TitleActions
-                trailer={trailer}
-                onWatchTrailer={onWatchTrailer}
-                mediaType={mediaType}
-                id={id}
-                title={details.title}
-              />
-            </div>
-
-            {/* Providers — fetched client-side by region so the page stays
-                ISR-cacheable (see ClientProviderSection). */}
-            <div className="bg-muted/10 rounded-lg px-6 py-4 border border-white/5 backdrop-blur-md">
-              <ClientProviderSection mediaType={mediaType} id={id} />
-            </div>
-
-            {/* Overview */}
-            <div className="flex flex-col gap-2">
-              <p className="text-lg leading-relaxed text-muted-foreground/90 max-w-4xl">
-                {details.overview}
-              </p>
-              
-              {/* Collection Link */}
-              {collection && (
-                <div className="mt-6">
-                  <CollectionCard collection={collection} />
-                </div>
-              )}
-            </div>
+            <AvailabilityStrip availability={availability} />
           </div>
-        </div>
 
-        {/* TV Seasons & Episodes — its own full-width section below the
-            hero, spanning the container like Top Cast / Details. */}
-        {mediaType === "tv" && tvSeasons && (
-          <TvSeasonsEpisodesPanel
-            seriesId={tvSeasons.seriesId}
-            seasons={tvSeasons.seasons}
-            episodeRuntime={details.runtimeMinutes}
-          />
-        )}
-
-        {/* Bottom Section: Top Cast + Details */}
-        <div className="flex flex-col gap-8 w-full">
-          {/* Top Cast */}
-          <TopCastRow cast={cast} />
-
-          {/* Details */}
-          <DetailsTab data={infoPanelData} />
+          {aside && <div className="hidden xl:block w-[280px] shrink-0 md:pt-24">{aside}</div>}
         </div>
       </div>
     </div>
+  );
+}
+
+export function OverviewBlock({ titleData }: { titleData: TitlePagePayload }) {
+  const { details, collection } = titleData;
+  return (
+    <section aria-labelledby="overview-heading" className="flex flex-col gap-3">
+      <h2 id="overview-heading" className="text-lg font-bold tracking-tight text-foreground">Overview</h2>
+      <p className="max-w-[68ch] text-base leading-relaxed text-muted-foreground">
+        {details.overview || 'No synopsis on TMDB yet.'}
+      </p>
+      {collection && <CollectionCard collection={collection} className="mt-2" />}
+    </section>
+  );
+}
+
+export function SeasonsBlock({ titleData }: { titleData: TitlePagePayload }) {
+  const { mediaType, tvSeasons, details } = titleData;
+  if (mediaType !== 'tv' || !tvSeasons) return null;
+  return (
+    <TvSeasonsEpisodesPanel
+      seriesId={tvSeasons.seriesId}
+      seasons={tvSeasons.seasons}
+      episodeRuntime={details.runtimeMinutes}
+    />
   );
 }

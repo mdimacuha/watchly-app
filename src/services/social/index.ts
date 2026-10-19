@@ -655,6 +655,40 @@ export async function unblockUser(
     );
 }
 
+export interface BlockedUser extends PublicUserCard {
+  blockedAt: string;
+}
+
+/** People this user has blocked, most recent first (Settings → Privacy). */
+export async function listBlockedUsers(blockerId: string): Promise<BlockedUser[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      usersAvatar: users.avatarUrl,
+      displayName: userProfiles.displayName,
+      profileAvatar: userProfiles.avatarUrl,
+      blockedAt: userBlocks.createdAt,
+    })
+    .from(userBlocks)
+    .innerJoin(users, eq(users.id, userBlocks.blockedId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, userBlocks.blockedId))
+    .where(eq(userBlocks.blockerId, blockerId))
+    .orderBy(sql`${userBlocks.createdAt} desc`)
+    .limit(500);
+  return rows.map((r) => ({
+    id: r.id,
+    username: r.username,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    displayName: r.displayName || `${r.firstName} ${r.lastName}`.trim() || r.username,
+    avatarUrl: r.profileAvatar || r.usersAvatar || '',
+    blockedAt: r.blockedAt.toISOString(),
+  }));
+}
+
 /**
  * True when either user has blocked the other. Used as a precondition
  * before any social interaction (follow, view, message-in-future, etc.).

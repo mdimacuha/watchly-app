@@ -20,6 +20,7 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { cn } from '@/lib/cn';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import { STATUS_META, STATUS_ORDER } from './StatusChip';
 import { WatchlistBoardCard } from './WatchlistBoardCard';
 import { useToast } from '@/hooks/useToast';
@@ -158,6 +159,7 @@ export function WatchlistBoardView({
   };
 
   return (
+    <ArrowStrip label="status columns">
     <div className="overflow-x-auto scrollbar-thin pb-3 -mx-4 px-4">
       <DndContext
         sensors={sensors}
@@ -199,6 +201,7 @@ export function WatchlistBoardView({
         {mounted ? createPortal(dragOverlay, document.body) : dragOverlay}
       </DndContext>
     </div>
+    </ArrowStrip>
   );
 }
 

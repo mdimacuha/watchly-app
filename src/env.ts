@@ -24,6 +24,9 @@ const envSchema = z.object({
   // 0.0.0.0:1025 — port 8025 is the web UI, NOT the SMTP listener.
   SMTP_HOST: z.string().min(1).default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  // Shared secret Vercel Cron sends as `Authorization: Bearer <secret>`.
+  // Unset = cron routes refuse every call.
+  CRON_SECRET: z.string().min(16).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

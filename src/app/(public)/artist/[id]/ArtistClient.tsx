@@ -11,6 +11,7 @@ import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FavoriteButton } from '@/components/watchly/FavoriteButton';
 import { BackLink } from '@/components/nav/BackLink';
 import { useAuthStore } from '@/client/stores/auth';
+import { useRegionBadges } from '@/components/watchly/useRegionBadges';
 
 interface ArtistClientProps {
   payload: PersonPagePayload;
@@ -19,6 +20,9 @@ interface ArtistClientProps {
 export function ArtistClient({ payload }: ArtistClientProps) {
   const isAuthenticated = useAuthStore((s) => s.status === 'authenticated');
   const { details, credits } = payload;
+  // Availability for the visitor's region, loaded after hydration (the page
+  // HTML is cached and region-agnostic).
+  const badges = useRegionBadges(payload.badgeTargets);
   const defaultTab =
     details.knownForDepartment === 'Acting' || credits.cast.length > 0
       ? 'cast'
@@ -142,7 +146,7 @@ export function ArtistClient({ payload }: ArtistClientProps) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
           {sortedCredits.map(credit => (
             <div
-              key={`${credit.mediaType}-${credit.id}-${credit.job || credit.character}`}
+              key={credit.creditId}
               className="flex flex-col gap-2"
             >
               <QuickViewLink
@@ -163,7 +167,8 @@ export function ArtistClient({ payload }: ArtistClientProps) {
                   }
                   mediaType={credit.mediaType}
                   className="w-full max-w-none"
-                  availability={credit.availability}
+                  availability={badges[`${credit.mediaType}-${credit.id}`]}
+                  availabilityChecked={`${credit.mediaType}-${credit.id}` in badges}
                 />
               </QuickViewLink>
               {/* Role/Job Display */}

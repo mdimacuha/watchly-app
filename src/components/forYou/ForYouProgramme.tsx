@@ -31,6 +31,8 @@ import { buildImageUrl } from '@/lib/tmdb';
 import { formatRuntime } from '@/lib/format';
 import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
+import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import { AddToWatchlistButton } from '@/components/watchlists/AddToWatchlistButton';
 import { PreferencesButton } from '@/components/forYou/PreferencesButton';
 import { useToastStore } from '@/client/stores/toast';
@@ -71,12 +73,36 @@ function useFeedViewed(pool: ForYouPool, variant: string) {
 
 type PickState = ReturnType<typeof usePickState>;
 
+/**
+ * `next` in `prev`'s order: kept picks updated in place, new ones appended,
+ * and picks the server dropped kept. A save (watchlist, favorite) refreshes
+ * the page with a pool that leaves the saved title out; keeping it stops the
+ * card vanishing (and its slot emptying) under the user's click. A reload
+ * starts clean.
+ */
+function mergeStable<T extends { key: string }>(prev: T[], next: T[]): T[] {
+  const nextByKey = new Map(next.map((p) => [p.key, p]));
+  const have = new Set(prev.map((p) => p.key));
+  return [...prev.map((p) => nextByKey.get(p.key) ?? p), ...next.filter((p) => !have.has(p.key))];
+}
+
 function usePickState(pool: ForYouPool, variant: string) {
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const [stable, setStable] = useState({ source: pool, picks: pool.picks, wildcards: pool.wildcards });
+  // Pool refreshed (a server action revalidated the page) → merge, during
+  // render (React's pattern for adjusting state on a prop change).
+  if (stable.source !== pool) {
+    setStable({
+      source: pool,
+      picks: mergeStable(stable.picks, pool.picks),
+      wildcards: mergeStable(stable.wildcards, pool.wildcards),
+    });
+  }
+  const { picks, wildcards } = stable;
   const toast = useToast();
   const { addToast, removeToast } = useToastStore();
 
-  const available = useMemo(() => pool.picks.filter((p) => !removed.has(p.key)), [pool, removed]);
+  const available = useMemo(() => picks.filter((p) => !removed.has(p.key)), [picks, removed]);
   const remove = (key: string) => setRemoved((prev) => new Set(prev).add(key));
   const restore = (key: string) =>
     setRemoved((prev) => {
@@ -139,7 +165,7 @@ function usePickState(pool: ForYouPool, variant: string) {
   const onSaved = (pick: PoolPick, slot: string) =>
     trackForYou('committed', pick.key, { variant, slot, kind: 'watchlist_open' });
 
-  return { available, removed, remove, restore, opened, markWatched, dismiss, onSaved, variant };
+  return { picks, wildcards, available, removed, remove, restore, opened, markWatched, dismiss, onSaved, variant };
 }
 
 function meta(pick: PoolPick) {
@@ -154,7 +180,9 @@ function meta(pick: PoolPick) {
 }
 
 function Providers({ pick, max = 3 }: { pick: PoolPick; max?: number }) {
-  if (pick.ui.providers.length === 0) return null;
+  if (pick.ui.providers.length === 0) {
+    return pick.ui.availabilityChecked ? <NotInRegionPill className="w-fit" /> : null;
+  }
   return (
     <div className="flex flex-wrap gap-1.5">
       {pick.ui.providers.slice(0, max).map((p) => (
@@ -204,6 +232,7 @@ function ContinueStrip({ items, variant }: { items: ContinueItem[]; variant: str
       <h2 id="fy-continue" className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         Continue
       </h2>
+      <ArrowStrip label="continue watching">
       <ul className="no-scrollbar -mx-1 flex gap-3 overflow-x-auto px-1">
         {items.map((c, i) => {
           const poster = buildImageUrl(c.ui.posterPath, 'w185');
@@ -229,6 +258,7 @@ function ContinueStrip({ items, variant }: { items: ContinueItem[]; variant: str
           );
         })}
       </ul>
+      </ArrowStrip>
     </section>
   );
 }
@@ -303,7 +333,7 @@ const SLOT_IDS: SlotId[] = ['feature', 'support1', 'support2'];
 function ProgrammeView({ pool, state }: { pool: ForYouPool; state: PickState }) {
   const dial = useDial();
   const { addToast, removeToast } = useToastStore();
-  const byKey = useMemo(() => new Map(pool.picks.map((p) => [p.key, p])), [pool]);
+  const byKey = useMemo(() => new Map(state.picks.map((p) => [p.key, p])), [state.picks]);
 
   // Picks that fit the dial right now (still in ranked order).
   const { time, mood } = dial;
@@ -312,8 +342,8 @@ function ProgrammeView({ pool, state }: { pool: ForYouPool; state: PickState }) 
     [state.available, time, mood],
   );
   const wildcards = useMemo(
-    () => pool.wildcards.filter((p) => matchesDialLoosely(p, time, mood)),
-    [pool.wildcards, time, mood],
+    () => state.wildcards.filter((p) => matchesDialLoosely(p, time, mood)),
+    [state.wildcards, time, mood],
   );
 
   // Which pick sits in each slot, dealt per dial setting. `shown` = every
@@ -722,8 +752,8 @@ function DeeperView({ pool, state }: { pool: ForYouPool; state: PickState }) {
   }, [state.available, time, mood]);
 
   const different = useMemo(
-    () => pool.wildcards.filter((p) => matchesDialLoosely(p, time, mood)).slice(0, PER_SECTION),
-    [pool.wildcards, time, mood],
+    () => state.wildcards.filter((p) => matchesDialLoosely(p, time, mood)).slice(0, PER_SECTION),
+    [state.wildcards, time, mood],
   );
   const total = sections.reduce((n, s) => n + s.picks.length, 0) + different.length;
 

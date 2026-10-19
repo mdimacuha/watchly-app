@@ -1,4 +1,3 @@
-import { Bookmark } from 'lucide-react';
 import { listWatchlistsAction } from '@/actions/watchlists';
 import { WatchlistsPageClient } from '@/components/watchlists/WatchlistsPageClient';
 import { requireUser } from '@/server/auth/requireUser';
@@ -11,16 +10,14 @@ export default async function WatchlistsPage() {
   // Accent comes from the shared per-user cache the layouts already use,
   // instead of a fresh DB query on every visit.
   const [watchlists, accentColor] = await Promise.all([
-    listWatchlistsAction(),
+    // First 12 poster previews per list for the cover scrub (the rest load
+    // on hover via getWatchlistPreviewsAction) + watched / total runtime.
+    listWatchlistsAction({ previews: 12, runtimes: true }),
     getAccentColorFor(userId),
   ]);
 
   return (
-    <AccentScope accentColor={accentColor} className="px-8 py-10">
-      <div className="flex items-center gap-3 mb-4">
-        <Bookmark size={24} className="text-primary" />
-        <h1 className="text-h2">Watchlists</h1>
-      </div>
+    <AccentScope accentColor={accentColor} className="px-4 sm:px-8 py-10">
       <WatchlistsPageClient watchlists={watchlists} />
     </AccentScope>
   );

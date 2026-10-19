@@ -7,6 +7,7 @@ import { Trash2 } from 'lucide-react';
 import { buildImageUrl } from '@/lib/tmdb';
 import { formatRuntime, formatYear } from '@/lib/format';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
+import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 import { useToast } from '@/hooks/useToast';
 import {
   updateItemStatusAction,
@@ -182,12 +183,14 @@ export function WatchlistListItem({
             onChange={isOwner ? handleStatusChange : undefined}
             menuPlacement="down"
           />
-          {item.provider && (
+          {item.provider ? (
             <ProviderBadge
               providerId={item.provider.providerId}
               label={item.provider.providerName}
               size="sm"
             />
+          ) : (
+            item.availabilityChecked && <NotInRegionPill />
           )}
         </div>
       </div>
