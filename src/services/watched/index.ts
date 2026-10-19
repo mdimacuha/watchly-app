@@ -10,6 +10,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import type { MovieCard, TvCard } from '@/server/tmdb/types';
+import { invalidateForYouPool } from '@/services/forYou/cacheTag';
 
 export type WatchableMediaType = 'movie' | 'tv';
 
@@ -59,6 +60,7 @@ export async function markAsWatched(
           sql`, `,
         )})`,
       );
+    invalidateForYouPool(userId);
     return 'watchlist_finished';
   }
 
@@ -68,6 +70,7 @@ export async function markAsWatched(
     .insert(watchedTitles)
     .values({ userId, mediaType, mediaId })
     .onConflictDoNothing();
+  invalidateForYouPool(userId);
   return 'watched_table';
 }
 
@@ -319,6 +322,7 @@ export async function unmarkWatched(
   }
 
   await Promise.all(ops);
+  invalidateForYouPool(userId);
 }
 
 // Suppress lint warning for unused desc import — kept for future

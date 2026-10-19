@@ -2,7 +2,7 @@
 
 import { getSession } from '@/server/auth/session';
 import { addFavorite, getFavorites, isFavorite, removeFavorite, type FavoriteType } from '@/services/favorites';
-import { enrichFavorites } from '@/services/favorites/enrich';
+import { getEnrichedFavorites } from '@/services/favorites/enrich';
 import { revalidatePath } from 'next/cache';
 
 export async function toggleFavoriteAction(
@@ -65,6 +65,5 @@ export async function getEnrichedFavoritesAction() {
   if (!session) {
     throw new Error('Unauthorized');
   }
-  const favorites = await getFavorites(session.userId);
-  return enrichFavorites(favorites);
+  return getEnrichedFavorites(session.userId);
 }

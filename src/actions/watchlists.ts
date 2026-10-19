@@ -1,9 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '@/db';
-import { userFavorites } from '@/db/schema';
+import { getFavoriteKeysInWatchlist } from '@/services/favorites';
 import { getSession } from '@/server/auth/session';
 import { ZodError } from 'zod';
 import { AppError, UnauthorizedAppError } from '@/utils/errors';
@@ -104,35 +102,19 @@ export async function getEnrichedWatchlistAction(watchlistId: string) {
   // only if the viewer owns it OR the list is public.
   const session = await getSession();
   const viewerId = session?.userId ?? null;
-  const region = await resolveViewerRegion(viewerId);
-  const { watchlist, items, isOwner, owner } = await getWatchlist(
-    watchlistId,
-    viewerId,
-  );
 
-  // Build a (mediaType:mediaId) set of items the viewer has favorited so the
-  // heart toggle renders the correct initial state.
-  let favoriteSet = new Set<string>();
-  if (viewerId && items.length > 0) {
-    const rows = await db
-      .select({
-        favoriteId: userFavorites.favoriteId,
-        favoriteType: userFavorites.favoriteType,
-      })
-      .from(userFavorites)
-      .where(
-        and(
-          eq(userFavorites.userId, viewerId),
-          inArray(
-            userFavorites.favoriteId,
-            items.map((i) => i.mediaId),
-          ),
-        ),
-      );
-    favoriteSet = new Set(
-      rows.map((r) => `${r.favoriteType}:${r.favoriteId}`),
-    );
-  }
+  // Region, the list itself, and the viewer's favorites (heart state) are
+  // independent reads — run them concurrently rather than one after another.
+  // The favorites read only returns the viewer's own data, so it's safe to
+  // start before getWatchlist has checked access (which throws if denied).
+  const [region, { watchlist, items, isOwner, owner }, favoriteSet] =
+    await Promise.all([
+      resolveViewerRegion(viewerId),
+      getWatchlist(watchlistId, viewerId),
+      viewerId
+        ? getFavoriteKeysInWatchlist(viewerId, watchlistId)
+        : Promise.resolve(new Set<string>()),
+    ]);
 
   const enriched = await enrichWatchlistItems(items, region, favoriteSet);
   return { watchlist, items: enriched, isOwner, owner };

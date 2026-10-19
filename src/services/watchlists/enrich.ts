@@ -136,12 +136,16 @@ async function resolveProvider(opts: {
   return null;
 }
 
+// One TMDB detail fetch per item (1h Data Cache). 10 in flight halves the
+// cold-cache wall time vs 5 and stays well under TMDB's rate limit.
+const ENRICH_CONCURRENCY = 10;
+
 export async function enrichWatchlistItems(
   items: RawItem[],
   region = 'US',
   favoriteSet: Set<string> = new Set(),
 ): Promise<EnrichedWatchlistItem[]> {
-  const results = await mapWithConcurrency(items, 5, async (it) => {
+  const results = await mapWithConcurrency(items, ENRICH_CONCURRENCY, async (it) => {
     const isFav = favoriteSet.has(`${it.mediaType}:${it.mediaId}`);
     try {
       const raw = await tmdbFetch<Record<string, unknown> & { 'watch/providers'?: WatchProvidersResponse; episode_run_time?: number[]; runtime?: number }>(

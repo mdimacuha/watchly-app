@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { watchlists, watchlistItems, users, userProfiles } from '@/db/schema';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { recordActivity } from '@/services/activity/record';
 import {
@@ -24,6 +24,7 @@ import { requireVerifiedOrInGrace } from '@/services/auth/verificationGate';
 import { moderateText } from '@/services/moderation/contentModeration';
 import { logger } from '@/lib/log';
 import { placeAtRank } from '@/lib/ranking';
+import { invalidateForYouPool } from '@/services/forYou/cacheTag';
 
 // Helper: runs name + description through moderateText. Throws a
 // generic ValidationAppError on profanity / slur match so the user
@@ -166,6 +167,7 @@ export async function deleteWatchlist(
   await requireOwnedWatchlist(watchlistId, userId);
 
   await db.delete(watchlists).where(eq(watchlists.id, watchlistId));
+  invalidateForYouPool(userId);
 }
 
 type WatchlistAggregate = Omit<WatchlistWithCount, 'posterPaths'>;
@@ -227,23 +229,36 @@ async function attachPosters(
 ): Promise<WatchlistWithCount[]> {
   if (rows.length === 0) return [];
 
-  // Top N items per list in parallel.
-  const itemsByList = await Promise.all(
-    rows.map((row) =>
-      db
-        .select({
-          mediaType: watchlistItems.mediaType,
-          mediaId: watchlistItems.mediaId,
-        })
-        .from(watchlistItems)
-        .where(eq(watchlistItems.watchlistId, row.id))
-        .orderBy(
-          desc(watchlistItems.sortOrder),
-          desc(watchlistItems.createdAt),
-        )
-        .limit(THUMBNAIL_POSTER_COUNT),
-    ),
-  );
+  // Top N items per list in ONE query (row_number per list) instead of one
+  // query per list — a user with 12 lists was paying 12 DB round-trips.
+  const ranked = db
+    .select({
+      watchlistId: watchlistItems.watchlistId,
+      mediaType: watchlistItems.mediaType,
+      mediaId: watchlistItems.mediaId,
+      rn: sql<number>`row_number() over (partition by ${watchlistItems.watchlistId} order by ${watchlistItems.sortOrder} desc, ${watchlistItems.createdAt} desc)`.as('rn'),
+    })
+    .from(watchlistItems)
+    .where(inArray(watchlistItems.watchlistId, rows.map((r) => r.id)))
+    .as('ranked');
+
+  const topItems = await db
+    .select({
+      watchlistId: ranked.watchlistId,
+      mediaType: ranked.mediaType,
+      mediaId: ranked.mediaId,
+    })
+    .from(ranked)
+    .where(lte(ranked.rn, THUMBNAIL_POSTER_COUNT))
+    .orderBy(ranked.watchlistId, ranked.rn);
+
+  const topByList = new Map<string, typeof topItems>();
+  for (const it of topItems) {
+    const list = topByList.get(it.watchlistId) ?? [];
+    list.push(it);
+    topByList.set(it.watchlistId, list);
+  }
+  const itemsByList = rows.map((row) => topByList.get(row.id) ?? []);
 
   // Resolve each unique (mediaType, mediaId) once.
   const uniqueKeys = new Set<string>();
@@ -294,22 +309,38 @@ export async function getWatchlist(
     throw new ForbiddenAppError('Watchlist is private');
   }
 
-  const ownerRow = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      usersAvatarUrl: users.avatarUrl,
-      displayName: userProfiles.displayName,
-      profileAvatarUrl: userProfiles.avatarUrl,
-      accentColor: userProfiles.accentColor,
-    })
-    .from(users)
-    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
-    .where(eq(users.id, watchlist.userId))
-    .limit(1)
-    .then((rows) => rows[0]);
+  // Owner and items only depend on the (already access-checked) list row,
+  // so load them concurrently.
+  const [ownerRow, items] = await Promise.all([
+    db
+      .select({
+        id: users.id,
+        username: users.username,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        usersAvatarUrl: users.avatarUrl,
+        displayName: userProfiles.displayName,
+        profileAvatarUrl: userProfiles.avatarUrl,
+        accentColor: userProfiles.accentColor,
+      })
+      .from(users)
+      .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+      .where(eq(users.id, watchlist.userId))
+      .limit(1)
+      .then((rows) => rows[0]),
+    db
+      .select()
+      .from(watchlistItems)
+      .where(eq(watchlistItems.watchlistId, watchlistId))
+      // Unranked ("Recently Added", rankedAt null) items are pinned on top.
+      // Then sortOrder, the explicit manual ordering (set by reorder + addItem):
+      // higher = top. createdAt-desc breaks ties for items that share an order.
+      .orderBy(
+        sql`${watchlistItems.rankedAt} is not null`,
+        desc(watchlistItems.sortOrder),
+        desc(watchlistItems.createdAt),
+      ),
+  ]);
 
   if (!ownerRow) throw new NotFoundAppError('Watchlist owner not found');
 
@@ -322,19 +353,6 @@ export async function getWatchlist(
     avatarUrl: ownerRow.profileAvatarUrl || ownerRow.usersAvatarUrl || '',
     accentColor: ownerRow.accentColor ?? null,
   };
-
-  const items = await db
-    .select()
-    .from(watchlistItems)
-    .where(eq(watchlistItems.watchlistId, watchlistId))
-    // Unranked ("Recently Added", rankedAt null) items are pinned on top.
-    // Then sortOrder, the explicit manual ordering (set by reorder + addItem):
-    // higher = top. createdAt-desc breaks ties for items that share an order.
-    .orderBy(
-      sql`${watchlistItems.rankedAt} is not null`,
-      desc(watchlistItems.sortOrder),
-      desc(watchlistItems.createdAt),
-    );
 
   return { watchlist, items, isOwner, owner };
 }
@@ -367,6 +385,7 @@ export async function addItem(
     .returning();
 
   if (row) {
+    invalidateForYouPool(userId);
     await recordActivity(userId, {
       type: 'watchlist_add',
       payload: {
@@ -418,6 +437,7 @@ export async function bulkAddItems(
     .returning({ id: watchlistItems.id });
 
   if (inserted.length > 0) {
+    invalidateForYouPool(userId);
     await recordActivity(userId, {
       type: 'watchlist_bulk_add',
       payload: {
@@ -590,6 +610,7 @@ export async function removeItem(
         eq(watchlistItems.mediaId, mediaId),
       ),
     );
+  invalidateForYouPool(userId);
 }
 
 // Set of statuses that mark "the user has started watching". First entry
@@ -661,6 +682,7 @@ export async function updateItemStatus(
       })
       .where(eq(watchlistItems.id, parsed.data.itemId));
   });
+  invalidateForYouPool(userId);
 }
 
 /**

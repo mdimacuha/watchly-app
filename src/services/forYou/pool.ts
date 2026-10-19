@@ -1,12 +1,14 @@
 import 'server-only';
 
 import { cache } from 'react';
+import { unstable_cache } from 'next/cache';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchlistItems, watchlists } from '@/db/schema';
 import { trending } from '@/server/tmdb';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { getSelectedProviders } from '@/services/preferences/forYouPrefs';
+import { forYouTag } from './cacheTag';
 import {
   enrichCandidate,
   gatherCandidates,
@@ -27,7 +29,8 @@ import {
  * (~150–240 TMDB calls) and never deduped against each other (the same
  * title in 3 rows, the hero repeated in a row).
  *
- * Wrapped in React `cache()` so all sections of one render share it.
+ * Wrapped in React `cache()` so all sections of one render share it, and in
+ * `unstable_cache` so repeat visits within the TTL skip the build entirely.
  */
 
 export interface PoolPick {
@@ -80,7 +83,23 @@ const CONTINUE_ORDER: ContinueStatus[] = [
   'up_next',
 ];
 
+// Cross-request cache for the pool. A cold build is dozens of TMDB calls
+// (recommendations per seed, enrich of up to 40 candidates + the continue
+// list) plus several DB scans; the result is a small JSON object. Keyed by region because
+// providers are regional. The tag is busted by every write to a pool input
+// (see `invalidateForYouPool`), so the TTL is only a backstop for the
+// trending/provider data that changes without a user action.
+const POOL_REVALIDATE_SECONDS = 10 * 60;
+
 export const getForYouPool = cache(async (userId: string, region: string): Promise<ForYouPool> => {
+  const cached = unstable_cache(buildForYouPool, ['for-you-pool', userId, region], {
+    revalidate: POOL_REVALIDATE_SECONDS,
+    tags: [forYouTag(userId)],
+  });
+  return cached(userId, region);
+});
+
+async function buildForYouPool(userId: string, region: string): Promise<ForYouPool> {
   const [seeds, excludeSet, selectedProviders, passedGenres, trendingToday] = await Promise.all([
     pickSeeds(userId),
     loadExcludeSet(userId),
@@ -139,7 +158,7 @@ export const getForYouPool = cache(async (userId: string, region: string): Promi
   const wildcards = await loadWildcards(region, excludeSet, used);
 
   return { picks, wildcards, continueItems, hasTaste: seeds.length > 0 };
-});
+}
 
 /** Watchlist items in progress / queued, most actionable status first. */
 async function loadContinue(userId: string, region: string): Promise<ContinueItem[]> {

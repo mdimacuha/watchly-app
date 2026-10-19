@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { userPreferences } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { ValidationAppError } from '@/utils/errors';
+import { invalidateForYouPool } from '@/services/forYou/cacheTag';
 
 export const selectedProvidersSchema = z.array(z.number().int().positive()).max(50);
 
@@ -45,5 +46,6 @@ export async function updateSelectedProviders(
     .update(userPreferences)
     .set({ selectedProviders: parsed.data, updatedAt: new Date() })
     .where(eq(userPreferences.userId, userId));
+  invalidateForYouPool(userId);
   return parsed.data;
 }

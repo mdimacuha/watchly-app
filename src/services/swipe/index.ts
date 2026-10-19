@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { titleSwipeEvents, titleSwipes } from '@/db/schema';
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import { addFavorite, removeFavorite } from '@/services/favorites';
+import { invalidateForYouPool } from '@/services/forYou/cacheTag';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { logger } from '@/lib/log';
@@ -91,6 +92,7 @@ export async function recordSwipe(
     // RETURNING fires on both the insert and the conflict-update path, so the
     // swipe id is always available for the single-step undo handle.
     .returning({ id: titleSwipes.id });
+  invalidateForYouPool(input.userId);
 
   await logSwipeEvent({
     userId: input.userId,
@@ -142,6 +144,7 @@ export async function deleteSwipe(
 
   const removed = deleted.length > 0;
   if (removed) {
+    invalidateForYouPool(userId);
     await logSwipeEvent({
       userId,
       titleId: deleted[0].titleId,
@@ -345,6 +348,7 @@ export async function resetSwipeHistory(userId: string): Promise<number> {
     .delete(titleSwipes)
     .where(eq(titleSwipes.userId, userId))
     .returning({ id: titleSwipes.id });
+  invalidateForYouPool(userId);
   return deleted.length;
 }
 

@@ -1,8 +1,10 @@
 import { db } from '@/db';
-import { userFavorites } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { userFavorites, watchlistItems } from '@/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 import { recordActivity } from '@/services/activity/record';
 import { requireVerifiedOrInGrace } from '@/services/auth/verificationGate';
+import { invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { invalidateFavorites } from './cacheTag';
 
 export type FavoriteType = 'movie' | 'tv' | 'collection' | 'artist';
 
@@ -28,6 +30,8 @@ export async function addFavorite(
 
   // Only emit an event when this was a fresh insert (no row = already favorited).
   if (favorite) {
+    invalidateForYouPool(userId);
+    invalidateFavorites(userId);
     await recordActivity(userId, {
       type: 'favorite',
       payload: { mediaType: favoriteType, mediaId: favoriteId },
@@ -50,6 +54,38 @@ export async function removeFavorite(
         eq(userFavorites.favoriteType, favoriteType)
       )
     );
+  invalidateForYouPool(userId);
+  invalidateFavorites(userId);
+}
+
+/**
+ * `"type:id"` keys of the user's favorites that appear in a watchlist, for
+ * the detail page's heart state. Filters by subquery on the list's items, so
+ * it can run in parallel with loading those items instead of after them.
+ */
+export async function getFavoriteKeysInWatchlist(
+  userId: string,
+  watchlistId: string,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({
+      favoriteId: userFavorites.favoriteId,
+      favoriteType: userFavorites.favoriteType,
+    })
+    .from(userFavorites)
+    .where(
+      and(
+        eq(userFavorites.userId, userId),
+        inArray(
+          userFavorites.favoriteId,
+          db
+            .select({ mediaId: watchlistItems.mediaId })
+            .from(watchlistItems)
+            .where(eq(watchlistItems.watchlistId, watchlistId)),
+        ),
+      ),
+    );
+  return new Set(rows.map((r) => `${r.favoriteType}:${r.favoriteId}`));
 }
 
 export async function isFavorite(userId: string, favoriteId: string, favoriteType: FavoriteType) {
