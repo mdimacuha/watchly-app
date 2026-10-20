@@ -21,6 +21,7 @@ export const notificationPrefsSchema = z.object({
   follow_events: z.boolean().optional(),
   follow_activity: z.boolean().optional(),
   title_alerts: z.boolean().optional(),
+  following_badge: z.boolean().optional(),
 });
 
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
@@ -29,12 +30,15 @@ export interface ResolvedNotificationPrefs {
   follow_events: boolean;
   follow_activity: boolean;
   title_alerts: boolean;
+  /** Count Following activity in the bell badge (off: it waits in the Following tab). */
+  following_badge: boolean;
 }
 
 const DEFAULTS: ResolvedNotificationPrefs = {
   follow_events: true,
   follow_activity: true,
   title_alerts: true,
+  following_badge: false,
 };
 
 export async function getNotificationPreferences(
@@ -49,6 +53,7 @@ export async function getNotificationPreferences(
     follow_events: raw.follow_events ?? DEFAULTS.follow_events,
     follow_activity: raw.follow_activity ?? DEFAULTS.follow_activity,
     title_alerts: raw.title_alerts ?? DEFAULTS.title_alerts,
+    following_badge: raw.following_badge ?? DEFAULTS.following_badge,
   };
 }
 

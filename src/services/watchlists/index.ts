@@ -574,7 +574,7 @@ export async function bulkAddItems(
         watchlistItems.mediaId,
       ],
     })
-    .returning({ id: watchlistItems.id });
+    .returning({ id: watchlistItems.id, mediaType: watchlistItems.mediaType, mediaId: watchlistItems.mediaId });
 
   if (inserted.length > 0) {
     invalidateForYouPool(userId);
@@ -584,6 +584,7 @@ export async function bulkAddItems(
         watchlistId,
         watchlistName: watchlist.name,
         count: inserted.length,
+        items: inserted.map((r) => ({ mediaType: r.mediaType, mediaId: r.mediaId })),
       },
     });
   }

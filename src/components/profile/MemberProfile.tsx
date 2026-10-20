@@ -60,7 +60,11 @@ type Tab = 'profile' | 'library' | 'reviews';
 
 export function MemberProfile({ showcase, preview }: Props) {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<Tab>('profile');
+  // ?tab=reviews | library | favorites (links from notifications) open that tab.
+  const tabParam = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(() =>
+    tabParam === 'reviews' ? 'reviews' : tabParam === 'library' || tabParam === 'favorites' ? 'library' : 'profile',
+  );
   const { overview } = showcase;
   const ownerId = overview.profile.userId;
   const owner = overview.isSelf && !preview;
@@ -144,6 +148,7 @@ export function MemberProfile({ showcase, preview }: Props) {
       )}
       {tab === 'library' && (
         <ProfileLibrary
+          initialSection={tabParam === 'favorites' ? 'favorites' : undefined}
           showcase={showcase}
           preview={preview}
           watchedLocal={watchedLocal}

@@ -28,14 +28,17 @@ export function ProfileLibrary({
   preview,
   watchedLocal,
   onWatchedLocalChange,
+  initialSection,
 }: {
+  /** Opens on this section instead of Watchlists. */
+  initialSection?: 'favorites';
   showcase: ProfileShowcase;
   preview: boolean;
   /** Watched tab changes this visit (owned by the profile so they survive tab switches). */
   watchedLocal: WatchedLocal;
   onWatchedLocalChange: (next: (cur: WatchedLocal) => WatchedLocal) => void;
 }) {
-  const [section, setSection] = useState<Section>('watchlists');
+  const [section, setSection] = useState<Section>(initialSection ?? 'watchlists');
   const { overview } = showcase;
   const pid = overview.profile.userId;
   const owner = overview.isSelf && !preview;

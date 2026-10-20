@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
-import {
-  getUnreadNotificationCountAction,
-  markAllNotificationsReadAction,
-} from '@/actions/notifications';
+import { getUnreadNotificationCountAction } from '@/actions/notifications';
+import { NOTIFICATIONS_READ_EVENT } from '@/client/notifications';
 import {
   Search,
   Sparkles,
@@ -122,23 +120,26 @@ export function AppSidebar({
     setUnreadCount(n);
   }, []);
 
-  // Opening the bell marks everything read: zero the badge immediately, then
-  // persist. While the write is settling we suppress background refreshes so a
-  // stale (pre-commit) count can't flash the badge back. The `unreadRef === 0`
-  // / `markingReadRef` guards make repeated opens no-ops (no duplicate writes).
+  // Opening the bell zeroes the badge at once. The page itself marks rows read
+  // once it has shown them (so it can still say what's new), then fires
+  // NOTIFICATIONS_READ_EVENT; until then background refreshes are held back so
+  // a pre-commit count can't flash the badge back.
   const markNotificationsRead = useCallback(() => {
     if (unreadRef.current === 0 || markingReadRef.current) return;
     markingReadRef.current = true;
     applyUnread(0);
-    markAllNotificationsReadAction()
-      .then(() => getUnreadNotificationCountAction())
-      .then((n) => applyUnread(n))
-      .catch(() => {
-        // Leave the optimistic zero in place; the next poll will re-sync.
-      })
-      .finally(() => {
-        markingReadRef.current = false;
-      });
+    window.setTimeout(() => {
+      markingReadRef.current = false;
+    }, 8000);
+  }, [applyUnread]);
+
+  useEffect(() => {
+    const onRead = () => {
+      markingReadRef.current = false;
+      getUnreadNotificationCountAction().then(applyUnread, () => {});
+    };
+    window.addEventListener(NOTIFICATIONS_READ_EVENT, onRead);
+    return () => window.removeEventListener(NOTIFICATIONS_READ_EVENT, onRead);
   }, [applyUnread]);
 
   useEffect(() => {

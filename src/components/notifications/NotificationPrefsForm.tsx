@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { UserPlus, Sparkles, BellRing } from 'lucide-react';
+import { Bell, UserPlus, Sparkles, BellRing } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/hooks/useToast';
 import { updateNotificationPreferencesAction } from '@/actions/notifPreferences';
@@ -16,6 +16,8 @@ interface Row {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   description: string;
+  /** Only shown while this other setting is on. */
+  dependsOn?: keyof ResolvedNotificationPrefs;
 }
 
 const ROWS: Row[] = [
@@ -31,7 +33,14 @@ const ROWS: Row[] = [
     icon: Sparkles,
     label: 'Activity from people you follow',
     description:
-      "When someone you follow adds a title, favorites something, or makes a new watchlist. Throttled so you don't get spammed.",
+      "What people you follow favorite, review and add to their public lists, grouped into one notification per run. It waits in the Following tab.",
+  },
+  {
+    key: 'following_badge',
+    icon: Bell,
+    label: 'Count it on the bell',
+    description: 'Include activity from people you follow in the unread count. Off by default, so the bell only lights up for things about you.',
+    dependsOn: 'follow_activity',
   },
   {
     key: 'title_alerts',
@@ -63,12 +72,14 @@ export function NotificationPrefsForm({ initial }: NotificationPrefsFormProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {ROWS.map((row) => {
+      {ROWS.filter((row) => !row.dependsOn || prefs[row.dependsOn]).map((row) => {
         const value = prefs[row.key];
         return (
           <button
             key={row.key}
             type="button"
+            role="switch"
+            aria-checked={value}
             onClick={() => handleToggle(row.key)}
             disabled={pending}
             className={cn(
@@ -98,7 +109,7 @@ export function NotificationPrefsForm({ initial }: NotificationPrefsFormProps) {
             <div
               className={cn(
                 'relative w-10 h-6 rounded-full transition-colors shrink-0',
-                value ? 'bg-primary' : 'bg-muted',
+                value ? 'bg-primary' : 'bg-foreground/15',
               )}
             >
               <span

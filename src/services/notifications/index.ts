@@ -9,8 +9,10 @@ import { shouldDeliverToUser } from './preferences';
 export {
   getNotifications,
   getUnreadNotificationCount,
+  getUnreadCounts,
   markAllNotificationsRead,
   type NotificationItem,
+  type NotificationScope,
   type NotificationsPayload,
   type NotificationActor,
 } from './getNotifications';
