@@ -27,7 +27,7 @@ import { requireVerifiedOrInGrace } from '@/services/auth/verificationGate';
 import { moderateText } from '@/services/moderation/contentModeration';
 import { logger } from '@/lib/log';
 import { placeAtRank } from '@/lib/ranking';
-import { forYouTag, invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { invalidateForYouPool, libraryTag } from '@/services/forYou/cacheTag';
 import { unstable_cache } from 'next/cache';
 
 // Helper: runs name + description through moderateText. Throws a
@@ -194,7 +194,7 @@ type WatchlistAggregate = Omit<WatchlistWithCount, 'posterPaths'>;
  */
 export async function listWatchlists(
   userId: string,
-  opts: { previews?: number; runtimes?: boolean } = {},
+  opts: { previews?: number; runtimes?: boolean; publicOnly?: boolean } = {},
 ): Promise<WatchlistWithCount[]> {
   const rows = await db
     .select({
@@ -217,7 +217,7 @@ export async function listWatchlists(
     })
     .from(watchlists)
     .leftJoin(watchlistItems, eq(watchlistItems.watchlistId, watchlists.id))
-    .where(eq(watchlists.userId, userId))
+    .where(opts.publicOnly ? and(eq(watchlists.userId, userId), eq(watchlists.isPublic, true)) : eq(watchlists.userId, userId))
     .groupBy(watchlists.id)
     .orderBy(sql`greatest(${watchlists.updatedAt}, max(${watchlistItems.updatedAt})) desc`);
 
@@ -241,8 +241,8 @@ export async function listWatchlists(
 export async function listPublicWatchlists(
   userId: string,
 ): Promise<WatchlistWithCount[]> {
-  const lists = await listWatchlists(userId, { previews: 12, runtimes: true });
-  return lists.filter((l) => l.isPublic);
+  // Public lists only, so no posters are fetched for lists nobody here sees.
+  return listWatchlists(userId, { previews: 12, runtimes: true, publicOnly: true });
 }
 
 export type TitlePreview = { posterPath: string; title: string };
@@ -295,7 +295,7 @@ class PartialRuntimeError extends Error {
 /**
  * Total and watched (finished / rewatch) runtime per list for a user, keyed
  * by watchlist id. One TMDB detail per unique title (8 at a time), cached
- * per user under the For You tag — every item add / remove / status change
+ * per user under the library tag — every item add / remove / status change
  * already busts it. A build with TMDB failures is returned, not cached.
  */
 export async function getWatchlistRuntimes(userId: string): Promise<Record<string, ListRuntime>> {
@@ -333,7 +333,7 @@ export async function getWatchlistRuntimes(userId: string): Promise<Record<strin
       return result;
     },
     ['watchlist-runtimes', userId],
-    { revalidate: 3600, tags: [forYouTag(userId)] },
+    { revalidate: 3600, tags: [libraryTag(userId)] },
   );
   try {
     return await cached();

@@ -11,7 +11,7 @@ import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import type { MovieCard, TvCard } from '@/server/tmdb/types';
 import { unstable_cache } from 'next/cache';
-import { forYouTag, invalidateForYouPool } from '@/services/forYou/cacheTag';
+import { invalidateForYouPool, libraryTag } from '@/services/forYou/cacheTag';
 import { WATCHED_STATUSES } from '@/services/watchlists/validators';
 
 export type WatchableMediaType = 'movie' | 'tv';
@@ -223,8 +223,8 @@ export type EnrichedWatched =
  * call: better to show 59 of 60 than to flash an error on the profile.
  *
  * Cached per user (every profile view needs it; building it is `take` TMDB
- * reads). Tagged with the For You tag, which mark/unmark-watched already
- * busts. A build that lost rows to a TMDB error is returned but not cached,
+ * reads). Tagged with the library tag, which mark/unmark-watched and list
+ * writes bust. A build that lost rows to a TMDB error is returned but not cached,
  * so a transient failure doesn't hide titles for the whole TTL.
  */
 export async function getEnrichedWatched(
@@ -239,7 +239,7 @@ export async function getEnrichedWatched(
       return items;
     },
     ['watched-enriched', userId, String(take)],
-    { revalidate: ENRICHED_WATCHED_REVALIDATE_SECONDS, tags: [forYouTag(userId)] },
+    { revalidate: ENRICHED_WATCHED_REVALIDATE_SECONDS, tags: [libraryTag(userId)] },
   );
   try {
     return await cached();

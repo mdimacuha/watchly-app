@@ -92,7 +92,7 @@ export async function recordSwipe(
     // RETURNING fires on both the insert and the conflict-update path, so the
     // swipe id is always available for the single-step undo handle.
     .returning({ id: titleSwipes.id });
-  invalidateForYouPool(input.userId);
+  invalidateForYouPool(input.userId, { library: false });
 
   await logSwipeEvent({
     userId: input.userId,
@@ -144,7 +144,7 @@ export async function deleteSwipe(
 
   const removed = deleted.length > 0;
   if (removed) {
-    invalidateForYouPool(userId);
+    invalidateForYouPool(userId, { library: false });
     await logSwipeEvent({
       userId,
       titleId: deleted[0].titleId,
@@ -348,7 +348,7 @@ export async function resetSwipeHistory(userId: string): Promise<number> {
     .delete(titleSwipes)
     .where(eq(titleSwipes.userId, userId))
     .returning({ id: titleSwipes.id });
-  invalidateForYouPool(userId);
+  invalidateForYouPool(userId, { library: false });
   return deleted.length;
 }
 

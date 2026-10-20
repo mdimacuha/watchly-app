@@ -46,6 +46,6 @@ export async function updateSelectedProviders(
     .update(userPreferences)
     .set({ selectedProviders: parsed.data, updatedAt: new Date() })
     .where(eq(userPreferences.userId, userId));
-  invalidateForYouPool(userId);
+  invalidateForYouPool(userId, { library: false });
   return parsed.data;
 }

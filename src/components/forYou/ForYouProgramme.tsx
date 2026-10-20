@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -38,6 +38,7 @@ import { PreferencesButton } from '@/components/forYou/PreferencesButton';
 import { useToastStore } from '@/client/stores/toast';
 import { useToast } from '@/hooks/useToast';
 import { trackForYou } from '@/client/forYouEvents';
+import { replaceQuery } from '@/lib/urlState';
 import { markAsWatchedAction } from '@/actions/forYou';
 import { recordSwipeAction, undoSwipeAction } from '@/actions/swipe';
 import type { ContinueItem, ContinueStatus, ForYouPool, PoolPick } from '@/services/forYou/pool';
@@ -625,8 +626,6 @@ function matchesDialLoosely(p: PoolPick, t: TimeId, m: MoodId | null) {
 
 /** Dial state in the URL (?time=&mood=) so it survives reloads and carries to Deeper. */
 function useDial() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const rawTime = searchParams.get('time');
   const rawMood = searchParams.get('mood');
@@ -639,8 +638,8 @@ function useDial() {
     else params.set('time', nextTime);
     if (nextMood) params.set('mood', nextMood);
     else params.delete('mood');
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // Display-only (the page doesn't read the dial): no server round-trip.
+    replaceQuery(params);
   };
 
   const queryParams = new URLSearchParams();

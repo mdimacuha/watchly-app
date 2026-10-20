@@ -16,6 +16,16 @@ export const forYouTag = (userId: string) => `for-you:${userId}`;
  * Route Handlers, where `updateTag` throws; `expire: 0` makes the next read
  * rebuild instead of serving the stale pool once.
  */
-export function invalidateForYouPool(userId: string): void {
+export function invalidateForYouPool(userId: string, opts: { library?: boolean } = {}): void {
   revalidateTag(forYouTag(userId), { expire: 0 });
+  if (opts.library !== false) revalidateTag(libraryTag(userId), { expire: 0 });
 }
+
+/**
+ * Per-user tag on the profile's heavier library caches — taste profile,
+ * enriched watched list, watchlist runtimes. Busted with the pool by
+ * favorites / watched / watchlist writes, but not by swipes or provider
+ * prefs (`library: false`): those only steer For You, and rebuilding
+ * these (a TMDB read per title) on every swipe made /me slow.
+ */
+export const libraryTag = (userId: string) => `library:${userId}`;

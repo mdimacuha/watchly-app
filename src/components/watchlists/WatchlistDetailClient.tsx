@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { replaceQuery } from '@/lib/urlState';
 import {
   ArrowBigUp,
   ArrowDownUp,
@@ -121,7 +122,6 @@ export function WatchlistDetailClient({
   // re-enriching the whole list after every individual add.
   const addedDuringSession = useRef(false);
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const toast = useToast();
 
@@ -133,8 +133,7 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next === 'all') params.delete('status');
     else params.set('status', next);
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    replaceQuery(params);
   };
 
   // View mode also URL-persisted — same rationale (shareable, refresh-safe).
@@ -146,8 +145,7 @@ export function WatchlistDetailClient({
     if (next === 'grid') params.delete('view');
     else params.set('view', next);
     if (next !== 'list') params.delete('sort');
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    replaceQuery(params);
   };
 
   // Counts are always over the full list — that way "Watching (3)" doesn't
@@ -174,8 +172,7 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next) params.set('ranked', '1');
     else params.delete('ranked');
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    replaceQuery(params);
   };
   const unrankedCount = useMemo(() => items.filter((i) => !i.rankedAt).length, [items]);
 
@@ -198,8 +195,7 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next === 'rank') params.delete('sort');
     else params.set('sort', next);
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    replaceQuery(params);
   };
 
   // Auto keeps the curated order within each status (Array.sort is stable).

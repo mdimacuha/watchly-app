@@ -35,7 +35,7 @@ import {
 } from '@/services/users/rows';
 import { unstable_cache } from 'next/cache';
 import { tmdbFetch } from '@/server/tmdb/client';
-import { forYouTag } from '@/services/forYou/cacheTag';
+import { libraryTag } from '@/services/forYou/cacheTag';
 import { normalizeAccentColor, type AccentColor } from '@/constants/accentColors';
 import { cleanProviderName } from '@/utils/providers';
 import {
@@ -380,8 +380,8 @@ interface WatchProvidersBlock {
  * Cached per user + region + visible sources: building it costs up to
  * TASTE_SAMPLE_LIMIT TMDB reads, and every profile visit needs one or two
  * (owner's taste, viewer's taste for the match). Tagged with the For You
- * tag, which every write to a taste input (favorites, watched, swipes)
- * already busts, so changes show on the next read; the TTL is a backstop.
+ * library tag: favorites / watched / list writes bust it so changes show on
+ * the next read; swipes don't (they only tip the sample), the TTL covers them.
  */
 export async function getTasteProfile(
   userId: string,
@@ -393,7 +393,7 @@ export async function getTasteProfile(
   return unstable_cache(
     () => computeTasteProfile(userId, { region, sources }),
     ['taste-profile', userId, region, sourcesKey],
-    { revalidate: TASTE_REVALIDATE_SECONDS, tags: [forYouTag(userId)] },
+    { revalidate: TASTE_REVALIDATE_SECONDS, tags: [libraryTag(userId)] },
   )();
 }
 
