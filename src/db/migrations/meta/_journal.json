@@ -281,6 +281,13 @@
       "when": 1792432131364,
       "tag": "0039_featured_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792479020038,
+      "tag": "0040_reviews_count_as_watched",
+      "breakpoints": true
     }
   ]
 }

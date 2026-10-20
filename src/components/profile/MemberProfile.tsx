@@ -33,7 +33,9 @@ import { FollowSuggestionsRow } from '@/components/social/FollowSuggestionsRow';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { ProfileEditModal } from '@/components/profile/ProfileEditModal';
 import { StoryExportButton } from '@/components/profile/StoryExportButton';
-import { ProfileLibrary } from '@/components/profile/ProfileLibrary';
+import { ProfileLibrary, favoritesLoad } from '@/components/profile/ProfileLibrary';
+import { prefetch, useCachedLoad } from '@/client/cachedLoad';
+import { MutualFollowersModal } from '@/components/profile/MutualFollowersModal';
 import { AccentPicker } from '@/components/profile/AccentPicker';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
@@ -78,6 +80,18 @@ export function MemberProfile({ showcase, preview }: Props) {
     trackProfile(ownerId, 'section_opened', undefined, { section: t });
   };
 
+  // Start a tab's fetch on hover/focus so it's usually loaded by the click.
+  const warmTab = (t: Tab) => {
+    const username = overview.profile.username;
+    const load =
+      t === 'reviews' && showcase.insights.reviews.count > 0
+        ? reviewsLoad(username, preview)
+        : t === 'library'
+          ? favoritesLoad(username, preview)
+          : null;
+    if (load) prefetch<unknown>(load.key, load.fetcher).catch(() => {});
+  };
+
   return (
     <AccentScope accentColor={accent} className="flex flex-col gap-8">
       {preview && (
@@ -102,6 +116,8 @@ export function MemberProfile({ showcase, preview }: Props) {
             role="tab"
             aria-selected={tab === t}
             onClick={() => openTab(t)}
+            onPointerEnter={() => warmTab(t)}
+            onFocus={() => warmTab(t)}
             className={cn(
               '-mb-px border-b-2 px-4 py-2.5 text-sm font-medium capitalize transition-colors cursor-pointer',
               tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -323,6 +339,9 @@ function MemberCard({
 
 function SocialLine({ overview }: { overview: Overview }) {
   const u = overview.profile.username;
+  const mutuals = overview.mutualFollowers;
+  const [mutualsOpen, setMutualsOpen] = useState(false);
+  const shown = mutuals.users.slice(0, 2);
   return (
     <p className="text-sm text-muted-foreground">
       <Link href={`/user/${u}/followers`} className="hover:text-foreground">
@@ -332,10 +351,48 @@ function SocialLine({ overview }: { overview: Overview }) {
       <Link href={`/user/${u}/following`} className="hover:text-foreground">
         <strong className="text-foreground">{overview.followSummary.followingCount}</strong> following
       </Link>
-      {overview.mutualFollowers.totalCount > 0 && (
+      {mutuals.totalCount > 0 && (
         <>
-          {' · '}Followed by {overview.mutualFollowers.users.slice(0, 2).map((m) => m.username).join(', ')}
-          {overview.mutualFollowers.totalCount > 2 && ` +${overview.mutualFollowers.totalCount - 2}`}
+          {' · '}
+          {/* "Followed by" and "+N" open the full list; each name goes to that profile. */}
+          <button
+            type="button"
+            onClick={() => setMutualsOpen(true)}
+            className="hover:text-foreground hover:underline underline-offset-4 cursor-pointer"
+          >
+            Followed by
+          </button>{' '}
+          {shown.map((m, i) => (
+            <span key={m.id}>
+              {i > 0 && ', '}
+              <Link
+                href={`/user/${m.username}`}
+                className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
+              >
+                {m.username}
+              </Link>
+            </span>
+          ))}
+          {mutuals.totalCount > shown.length && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => setMutualsOpen(true)}
+                aria-label={`See all ${mutuals.totalCount} people you follow who follow ${u}`}
+                className="hover:text-foreground hover:underline underline-offset-4 cursor-pointer"
+              >
+                +{mutuals.totalCount - shown.length}
+              </button>
+            </>
+          )}
+          <MutualFollowersModal
+            isOpen={mutualsOpen}
+            onClose={() => setMutualsOpen(false)}
+            targetId={overview.profile.userId}
+            initial={mutuals.users}
+            totalCount={mutuals.totalCount}
+          />
         </>
       )}
     </p>
@@ -621,7 +678,9 @@ function ByTheNumbers({ showcase }: { showcase: ProfileShowcase }) {
       label: 'Taste DNA',
       node: (
         <>
-        <ul className="flex flex-col gap-2">
+        {/* Spread across the frame: as a tall cell it spans two rows of
+            backdrop cards, and packing the rows at the top left a hole. */}
+        <ul className="flex flex-1 flex-col justify-between gap-2">
           {weights.map((w) => (
             <li key={w.name} className="flex items-center gap-3 text-sm">
               <span className="w-28 shrink-0 truncate">{w.name}</span>
@@ -893,45 +952,42 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
+/** Cache key + loader for a profile's first page of reviews (tab + hover prefetch). */
+function reviewsLoad(username: string, preview: boolean) {
+  return {
+    key: `profile-reviews:${username}:${preview ? 'guest' : 'viewer'}`,
+    fetcher: () => getProfileReviewsAction(username, { asGuest: preview }),
+  };
+}
+
 /** Every review, newest first, a page at a time (loaded when the tab opens). */
 function Reviews({ showcase, preview }: { showcase: ProfileShowcase; preview: boolean }) {
   const r = showcase.insights.reviews;
   const username = showcase.overview.profile.username;
-  const [items, setItems] = useState<ProfileReview[] | null>(null);
-  const [hasMore, setHasMore] = useState(false);
+  // First page through the tab cache (instant when you come back to the tab);
+  // "Show more" pages are appended locally.
+  const { key, fetcher } = reviewsLoad(username, preview);
+  const first = useCachedLoad(key, fetcher, r.count > 0);
+  const [more, setMore] = useState<{ items: ProfileReview[]; hasMore: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const items = first.data ? [...first.data.items, ...(more?.items ?? [])] : null;
+  const hasMore = more ? more.hasMore : (first.data?.hasMore ?? false);
+  const failed = first.failed || moreFailed;
 
   const load = async (offset: number) => {
+    if (offset === 0) return first.retry();
     setLoading(true);
-    setFailed(false);
+    setMoreFailed(false);
     try {
       const page = await getProfileReviewsAction(username, { asGuest: preview, offset });
-      setItems((cur) => (offset === 0 ? page.items : [...(cur ?? []), ...page.items]));
-      setHasMore(page.hasMore);
+      setMore((cur) => ({ items: [...(cur?.items ?? []), ...page.items], hasMore: page.hasMore }));
     } catch {
-      setFailed(true);
+      setMoreFailed(true);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (r.count === 0) return;
-    let cancelled = false;
-    getProfileReviewsAction(username, { asGuest: preview })
-      .then((page) => {
-        if (cancelled) return;
-        setItems(page.items);
-        setHasMore(page.hasMore);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [username, preview, r.count]);
 
   if (r.count === 0) return <Empty text="No reviews yet." />;
   return (

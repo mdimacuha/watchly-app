@@ -9,6 +9,7 @@ import { moderateText } from '@/services/moderation/contentModeration';
 import { recordActivity } from '@/services/activity/record';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapWithConcurrency } from '@/lib/concurrency';
+import { recordReviewWatch } from '@/services/watched';
 
 // ---------------------------------------------------------------------------
 // Title reviews (rating + optional written review) — self-only v1.
@@ -135,13 +136,17 @@ function mapReview(row: ReviewRow): UserReview {
  * moderation filter (length + profanity + slurs). Rating-only reviews skip
  * moderation. The rejection message is intentionally generic and safe to
  * surface to the user.
+ *
+ * A first review also counts as a watch: the title joins the user's watched
+ * set (watchlist statuses are left alone). `isNew` lets callers tell a first
+ * review from an edit.
  */
 export async function upsertReview(
   userId: string,
   titleId: string,
   titleType: string,
   input: ReviewInput,
-): Promise<UserReview> {
+): Promise<{ review: UserReview; isNew: boolean }> {
   const type = parseTitleType(titleType);
 
   const parsed = reviewInputSchema.safeParse(input);
@@ -213,9 +218,10 @@ export async function upsertReview(
       type: 'review',
       payload: { mediaType: type, mediaId: titleId, rating },
     });
+    await recordReviewWatch(userId, type, titleId);
   }
 
-  return mapReview(row);
+  return { review: mapReview(row), isNew: isNewReview };
 }
 
 /** Removes the viewer's review for a title. Returns true when a row was deleted. */

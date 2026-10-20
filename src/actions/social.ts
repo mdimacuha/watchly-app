@@ -12,6 +12,8 @@ import {
   blockUser,
   unblockUser,
   getFollowState,
+  getMutualFollowers,
+  type PublicUserCard,
   type FollowStatus,
   type FollowState,
 } from '@/services/social';
@@ -80,6 +82,15 @@ export async function unblockAction(blockedId: string): Promise<void> {
   await unblockUser(blockerId, blockedId);
   revalidatePath(`/user`, 'layout');
 }
+
+/** Everyone the viewer follows who also follows `targetId` (the "Followed by" popup). */
+export async function getMutualFollowersAction(targetId: string): Promise<PublicUserCard[]> {
+  const userId = await requireUserId();
+  const { users } = await getMutualFollowers(userId, targetId, { limit: MUTUALS_POPUP_LIMIT });
+  return users;
+}
+
+const MUTUALS_POPUP_LIMIT = 200;
 
 export async function getFollowStateAction(
   targetId: string,

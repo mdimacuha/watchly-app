@@ -11,6 +11,7 @@ import { WatchlistCoverCard } from '@/components/watchlists/WatchlistCoverCard';
 import { ShelfRail } from '@/components/favorites/shelfParts';
 import { trackProfile } from '@/client/profileEvents';
 import { getProfileFavoritesAction, type ProfileShowcase } from '@/actions/profile';
+import { prefetch, useCachedLoad } from '@/client/cachedLoad';
 import type { ProfileFavorites } from '@/services/favorites/profileShelves';
 import type { EnrichedWatched } from '@/services/watched';
 
@@ -29,6 +30,13 @@ export function ProfileLibrary({ showcase, preview }: { showcase: ProfileShowcas
   const [section, setSection] = useState<Section>('watchlists');
   const { overview } = showcase;
   const pid = overview.profile.userId;
+
+  // Library opens on Watchlists; warm Favorites so its tab opens loaded.
+  const username = overview.profile.username;
+  useEffect(() => {
+    const { key, fetcher } = favoritesLoad(username, preview);
+    prefetch(key, fetcher).catch(() => {});
+  }, [username, preview]);
 
   const counts: Record<Section, number | null> = {
     watchlists: overview.publicWatchlists.length,
@@ -96,39 +104,25 @@ function Watchlists({ showcase }: { showcase: ProfileShowcase }) {
 // Favorites: "All favorites" + shelves, loaded when the section opens
 // ---------------------------------------------------------------------------
 
+/** Cache key + loader for a profile's favorites, shared with the Library prefetch. */
+export function favoritesLoad(username: string, preview: boolean) {
+  return {
+    key: `profile-favorites:${username}:${preview ? 'guest' : 'viewer'}`,
+    fetcher: (): Promise<ProfileFavorites> => getProfileFavoritesAction(username, { asGuest: preview }),
+  };
+}
+
 function Favorites({ showcase, preview }: { showcase: ProfileShowcase; preview: boolean }) {
   const username = showcase.overview.profile.username;
   const owner = showcase.overview.isSelf && !preview;
-  const [data, setData] = useState<ProfileFavorites | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    getProfileFavoritesAction(username, { asGuest: preview })
-      .then((d) => {
-        if (!cancelled) setData(d);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [username, preview, attempt]);
+  const { key, fetcher } = favoritesLoad(username, preview);
+  const { data, failed, retry } = useCachedLoad(key, fetcher);
 
   if (failed) {
     return (
       <p className="text-sm text-muted-foreground">
         Couldn&apos;t load favorites.{' '}
-        <button
-          type="button"
-          onClick={() => {
-            setFailed(false);
-            setAttempt((n) => n + 1);
-          }}
-          className="text-primary hover:underline cursor-pointer"
-        >
+        <button type="button" onClick={retry} className="text-primary hover:underline cursor-pointer">
           Try again
         </button>
       </p>

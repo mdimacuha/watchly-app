@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FEATURES } from '@/constants/features';
 import { useToast } from '@/hooks/useToast';
-import { deleteReviewAction, getReviewsForTitleAction, saveReviewAction } from '@/actions/reviews';
+import {
+  deleteReviewAction,
+  finishReviewedItemsAction,
+  getReviewsForTitleAction,
+  saveReviewAction,
+} from '@/actions/reviews';
 import type { ReviewAggregate, TitleReview, UserReview } from '@/services/reviews';
 
 export type ReviewsState = ReturnType<typeof useTitleReviews>;
@@ -49,7 +54,28 @@ export function useTitleReviews(mediaType: 'movie' | 'tv', id: string) {
       }
       setAggregate(result.aggregate);
       setMine(result.mine);
-      toast.success('Review saved', 'Your rating has been recorded.');
+      const { unfinished } = result;
+      if (unfinished.length > 0) {
+        const where =
+          unfinished.length === 1 ? unfinished[0].watchlistName : `${unfinished.length} lists`;
+        const toastId = toast.custom({
+          type: 'success',
+          variant: 'action',
+          title: 'Review saved',
+          description: `Still unfinished in ${where}.`,
+          actionLabel: 'Mark as finished',
+          duration: 8000,
+          onAction: () => {
+            toast.dismiss(toastId);
+            finishReviewedItemsAction(unfinished).then(
+              () => toast.success('Marked as finished', `Updated in ${where}.`),
+              () => toast.error('Could not update your lists', 'Please try again.'),
+            );
+          },
+        });
+      } else {
+        toast.success('Review saved', 'Your rating has been recorded.');
+      }
       return true;
     } catch {
       toast.error('Could not save review', 'Please try again.');

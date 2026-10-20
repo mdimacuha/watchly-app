@@ -14,6 +14,8 @@ import {
   type UserReview,
   type TitleReview,
 } from '@/services/reviews';
+import { getUnfinishedListItems, type UnfinishedListItem } from '@/services/watched';
+import { updateItemStatus } from '@/services/watchlists';
 
 // ---------------------------------------------------------------------------
 // Server actions for the title review feature (self-only v1). ReviewsSection
@@ -36,7 +38,13 @@ export interface TitleReviewsPayload {
 }
 
 export type SaveReviewResult =
-  | { ok: true; aggregate: ReviewAggregate; mine: UserReview }
+  | {
+      ok: true;
+      aggregate: ReviewAggregate;
+      mine: UserReview;
+      /** On a first review: the viewer's list items for this title not yet finished. */
+      unfinished: UnfinishedListItem[];
+    }
   // Expected validation/moderation failure carrying a safe, user-facing message.
   | { ok: false; error: string };
 
@@ -79,14 +87,19 @@ export async function saveReviewAction(
 ): Promise<SaveReviewResult> {
   const userId = await requireUserId();
   try {
-    const mine = await upsertReview(userId, titleId, titleType, input);
-    const aggregate = await getReviewAggregate(titleId, titleType);
+    const { review: mine, isNew } = await upsertReview(userId, titleId, titleType, input);
+    const [aggregate, unfinished] = await Promise.all([
+      getReviewAggregate(titleId, titleType),
+      isNew && (titleType === 'movie' || titleType === 'tv')
+        ? getUnfinishedListItems(userId, titleType, titleId)
+        : Promise.resolve([]),
+    ]);
     revalidateTitle(titleId, titleType);
     // A new review also lands in the activity feed + the profile — refresh
     // those so it shows up without a hard reload.
     revalidatePath('/activity');
     revalidatePath('/me');
-    return { ok: true, aggregate, mine };
+    return { ok: true, aggregate, mine, unfinished };
   } catch (err) {
     // ValidationAppError (bad rating / body / moderation block) is expected
     // and carries a user-safe message. Anything else is a real server error.
@@ -95,6 +108,19 @@ export async function saveReviewAction(
     }
     throw err;
   }
+}
+
+/**
+ * The "Mark as finished" nudge after a first review: flips the given list
+ * items to finished. updateItemStatus owner-gates each item.
+ */
+export async function finishReviewedItemsAction(items: UnfinishedListItem[]): Promise<void> {
+  const userId = await requireUserId();
+  await Promise.all(items.map((i) => updateItemStatus(userId, i.itemId, 'finished')));
+  for (const id of new Set(items.map((i) => i.watchlistId))) {
+    revalidatePath(`/watchlists/${id}`);
+  }
+  revalidatePath('/watchlists');
 }
 
 /** Deletes the viewer's review for a title and returns the refreshed aggregate. */

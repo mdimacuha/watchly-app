@@ -6,7 +6,7 @@ import {
   watchlistItems,
   watchlists,
 } from '@/db/schema';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import type { MovieCard, TvCard } from '@/server/tmdb/types';
@@ -238,7 +238,9 @@ export async function getEnrichedWatched(
       if (failed > 0) throw new PartialWatchedError(items);
       return items;
     },
-    ['watched-enriched', userId, String(take)],
+    // v2: migration 0040 backfilled reviews into watched_titles; a new key makes
+    // the deploy that ships it drop every user's pre-backfill cached list.
+    ['watched-enriched-v2', userId, String(take)],
     { revalidate: ENRICHED_WATCHED_REVALIDATE_SECONDS, tags: [libraryTag(userId)] },
   );
   try {
@@ -297,6 +299,58 @@ async function enrichWatched(
 
   const items = hydrated.filter((r): r is EnrichedWatched => r !== null);
   return { items, failed: hydrated.length - items.length };
+}
+
+// ---------------------------------------------------------------------------
+// Reviews count as watches
+// ---------------------------------------------------------------------------
+
+/**
+ * Records a first review as a watch. Unlike `markAsWatched` it only touches
+ * watched_titles: a TV review mid-season shouldn't flip a "Watching" list
+ * item to finished. The review flow offers that as a separate nudge (see
+ * `getUnfinishedListItems`). Idempotent; an existing watch keeps its date.
+ */
+export async function recordReviewWatch(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+): Promise<void> {
+  await db
+    .insert(watchedTitles)
+    .values({ userId, mediaType, mediaId })
+    .onConflictDoNothing();
+  invalidateForYouPool(userId);
+}
+
+export interface UnfinishedListItem {
+  itemId: string;
+  watchlistId: string;
+  watchlistName: string;
+}
+
+/** The user's list items for a title that aren't in a watched status yet. */
+export async function getUnfinishedListItems(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+): Promise<UnfinishedListItem[]> {
+  return db
+    .select({
+      itemId: watchlistItems.id,
+      watchlistId: watchlists.id,
+      watchlistName: watchlists.name,
+    })
+    .from(watchlistItems)
+    .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
+    .where(
+      and(
+        eq(watchlists.userId, userId),
+        eq(watchlistItems.mediaType, mediaType),
+        eq(watchlistItems.mediaId, mediaId),
+        notInArray(watchlistItems.status, [...WATCHED_STATUSES]),
+      ),
+    );
 }
 
 // ---------------------------------------------------------------------------
