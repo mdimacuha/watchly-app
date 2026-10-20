@@ -10,9 +10,13 @@ import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapMovie, mapTv } from '@/server/tmdb/mappers';
 import type { MovieCard, TvCard } from '@/server/tmdb/types';
-import { unstable_cache } from 'next/cache';
+import { revalidateTag, unstable_cache } from 'next/cache';
+import { NotFoundAppError, ValidationAppError } from '@/utils/errors';
 import { invalidateForYouPool, libraryTag } from '@/services/forYou/cacheTag';
 import { WATCHED_STATUSES } from '@/services/watchlists/validators';
+import { WATCHED_PAGE_SIZE, compareWatched, seenOnToDate, type WatchedPrecision } from '@/lib/watchedDates';
+
+export type { WatchedPrecision };
 
 export type WatchableMediaType = 'movie' | 'tv';
 
@@ -123,20 +127,28 @@ export async function getWatchedKeySet(userId: string): Promise<Set<string>> {
 export interface WatchedEntry {
   mediaType: WatchableMediaType;
   mediaId: string;
-  /** Latest watch timestamp across both data sources for this (type, id). */
+  /**
+   * When it was seen: the member's own date when they set one (month/year
+   * dates sit on the 1st of the period), otherwise the latest watch
+   * timestamp across both sources. For 'unknown' it's the logged time, only
+   * used as a stable tiebreak.
+   */
   watchedAt: Date;
+  precision: WatchedPrecision;
+  /** True when the member set the date by hand (it's no longer just the logged time). */
+  confirmed: boolean;
 }
 
 /**
  * Pulls the user's full watched-titles set, merging:
- *   - watched_titles (explicit Mark as Watched)
+ *   - watched_titles (explicit Mark as Watched, reviews, dates set by hand)
  *   - watchlist_items with a watched status (finished / rewatch); rewatch
  *     rows without a finishedAt fall back to their updatedAt
  *
- * Deduped by (mediaType, mediaId) — when a title appears in both sources
- * the latest timestamp wins, so the profile grid shows it where the
- * user last interacted. Sorted by `watchedAt DESC` so the freshest
- * watches lead the page.
+ * Deduped by (mediaType, mediaId). A date the member set by hand
+ * (seen_precision not null) always wins; otherwise the latest timestamp
+ * across both sources does, so the grid shows it where the user last
+ * interacted. Sorted with `compareWatched`.
  */
 export async function getWatchedEntries(
   userId: string,
@@ -147,6 +159,8 @@ export async function getWatchedEntries(
         mediaType: watchedTitles.mediaType,
         mediaId: watchedTitles.mediaId,
         watchedAt: watchedTitles.watchedAt,
+        seenOn: watchedTitles.seenOn,
+        seenPrecision: watchedTitles.seenPrecision,
       })
       .from(watchedTitles)
       .where(eq(watchedTitles.userId, userId)),
@@ -168,33 +182,38 @@ export async function getWatchedEntries(
       ),
   ]);
 
-  // Merge into a Map keyed by `${type}:${id}` so the same title appearing
-  // in both sources collapses to one row with the max(watchedAt).
+  // Merge into a Map keyed by `${type}:${id}`: a hand-set date is final,
+  // otherwise the same title in both sources collapses to max(watchedAt).
   const merged = new Map<string, WatchedEntry>();
-
-  const add = (mediaType: WatchableMediaType, mediaId: string, ts: Date | null) => {
-    if (!ts) return;
-    const key = `${mediaType}:${mediaId}`;
-    const existing = merged.get(key);
-    if (!existing || ts > existing.watchedAt) {
-      merged.set(key, { mediaType, mediaId, watchedAt: ts });
-    }
-  };
+  const fixed = new Set<string>();
 
   for (const r of watched) {
-    if (r.mediaType === 'movie' || r.mediaType === 'tv') {
-      add(r.mediaType, r.mediaId, r.watchedAt);
+    if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue;
+    const key = `${r.mediaType}:${r.mediaId}`;
+    if (r.seenPrecision) {
+      fixed.add(key);
+      merged.set(key, {
+        mediaType: r.mediaType,
+        mediaId: r.mediaId,
+        watchedAt: r.seenOn && r.seenPrecision !== 'unknown' ? seenOnToDate(r.seenOn) : r.watchedAt,
+        precision: r.seenOn ? r.seenPrecision : 'unknown',
+        confirmed: true,
+      });
+    } else {
+      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.watchedAt, precision: 'day', confirmed: false });
     }
   }
   for (const r of finished) {
-    if (r.mediaType === 'movie' || r.mediaType === 'tv') {
-      add(r.mediaType, r.mediaId, r.finishedAt);
+    if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue;
+    const key = `${r.mediaType}:${r.mediaId}`;
+    if (fixed.has(key) || !r.finishedAt) continue;
+    const existing = merged.get(key);
+    if (!existing || r.finishedAt > existing.watchedAt) {
+      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.finishedAt, precision: 'day', confirmed: false });
     }
   }
 
-  return Array.from(merged.values()).sort(
-    (a, b) => b.watchedAt.getTime() - a.watchedAt.getTime(),
-  );
+  return Array.from(merged.values()).sort(compareWatched);
 }
 
 export async function getWatchedCount(userId: string): Promise<number> {
@@ -209,15 +228,25 @@ export async function getWatchedCount(userId: string): Promise<number> {
 // Enriched (TMDB-hydrated) listing for the profile grids
 // ---------------------------------------------------------------------------
 
+interface EnrichedWatchedBase {
+  mediaId: string;
+  watchedAt: string;
+  precision: WatchedPrecision;
+  confirmed: boolean;
+  /** Ticket number: 1 = the earliest dated watch. Null while undated. */
+  serial: number | null;
+}
+
 export type EnrichedWatched =
-  | { mediaType: 'movie'; mediaId: string; watchedAt: string; data: MovieCard }
-  | { mediaType: 'tv'; mediaId: string; watchedAt: string; data: TvCard };
+  | (EnrichedWatchedBase & { mediaType: 'movie'; data: MovieCard })
+  | (EnrichedWatchedBase & { mediaType: 'tv'; data: TvCard });
+
+export { WATCHED_PAGE_SIZE };
 
 /**
- * Returns the watched list with TMDB poster/title data attached, ready
- * to render in a poster grid. Limits to `take` rows (default 60) to keep
- * the TMDB fan-out bounded — pagination can come later if profiles
- * regularly exceed this.
+ * Returns a page of the watched list (newest first) with TMDB poster/title
+ * data attached, ready to render as ticket stubs. `take` rows from
+ * `offset` keep the TMDB fan-out bounded; "Show more" asks for the next.
  *
  * Per-row TMDB errors drop the entry rather than failing the whole
  * call: better to show 59 of 60 than to flash an error on the profile.
@@ -229,18 +258,19 @@ export type EnrichedWatched =
  */
 export async function getEnrichedWatched(
   userId: string,
-  opts: { take?: number } = {},
+  opts: { take?: number; offset?: number } = {},
 ): Promise<EnrichedWatched[]> {
-  const take = opts.take ?? 60;
+  const take = opts.take ?? WATCHED_PAGE_SIZE;
+  const offset = opts.offset ?? 0;
   const cached = unstable_cache(
     async () => {
-      const { items, failed } = await enrichWatched(userId, take);
+      const { items, failed } = await enrichWatched(userId, offset, take);
       if (failed > 0) throw new PartialWatchedError(items);
       return items;
     },
-    // v2: migration 0040 backfilled reviews into watched_titles; a new key makes
-    // the deploy that ships it drop every user's pre-backfill cached list.
-    ['watched-enriched-v2', userId, String(take)],
+    // v3: entries gained precision + serial (seen dates, migration 0041), so
+    // lists cached by the previous deploy are dropped.
+    ['watched-enriched-v3', userId, String(offset), String(take)],
     { revalidate: ENRICHED_WATCHED_REVALIDATE_SECONDS, tags: [libraryTag(userId)] },
   );
   try {
@@ -261,20 +291,32 @@ class PartialWatchedError extends Error {
 
 async function enrichWatched(
   userId: string,
+  offset: number,
   take: number,
 ): Promise<{ items: EnrichedWatched[]; failed: number }> {
-  const entries = (await getWatchedEntries(userId)).slice(0, take);
+  const all = await getWatchedEntries(userId);
+  // Ticket numbers run through the whole history (oldest dated = 1); the
+  // list is newest first with undated entries last, so dated index i has
+  // serial datedTotal - i.
+  const datedTotal = all.filter((e) => e.precision !== 'unknown').length;
+  const entries = all.slice(offset, offset + take);
   if (entries.length === 0) return { items: [], failed: 0 };
 
   const hydrated = await Promise.all(
-    entries.map(async (e): Promise<EnrichedWatched | null> => {
+    entries.map(async (e, i): Promise<EnrichedWatched | null> => {
+      const base = {
+        mediaId: e.mediaId,
+        watchedAt: e.watchedAt.toISOString(),
+        precision: e.precision,
+        confirmed: e.confirmed,
+        serial: e.precision === 'unknown' ? null : datedTotal - (offset + i),
+      };
       try {
         if (e.mediaType === 'movie') {
           const raw = await tmdbFetch<unknown>(`/movie/${e.mediaId}`);
           return {
+            ...base,
             mediaType: 'movie',
-            mediaId: e.mediaId,
-            watchedAt: e.watchedAt.toISOString(),
             data: mapMovie({
               ...(raw as Record<string, unknown>),
               media_type: 'movie',
@@ -283,9 +325,8 @@ async function enrichWatched(
         }
         const raw = await tmdbFetch<unknown>(`/tv/${e.mediaId}`);
         return {
+          ...base,
           mediaType: 'tv',
-          mediaId: e.mediaId,
-          watchedAt: e.watchedAt.toISOString(),
           data: mapTv({
             ...(raw as Record<string, unknown>),
             media_type: 'tv',
@@ -318,7 +359,7 @@ export async function recordReviewWatch(
 ): Promise<void> {
   await db
     .insert(watchedTitles)
-    .values({ userId, mediaType, mediaId })
+    .values({ userId, mediaType, mediaId, source: 'review' })
     .onConflictDoNothing();
   invalidateForYouPool(userId);
 }
@@ -363,17 +404,18 @@ export async function getUnfinishedListItems(
  *   - flips any watched (finished / rewatch) items back to 'watching' and clears
  *     finishedAt so the title leaves the user's watched set entirely.
  *
- * Idempotent: safe to call even if nothing matches.
+ * Idempotent: safe to call even if nothing matches. Returns what it undid,
+ * so `restoreWatched` can put it back exactly (the "Undo" toast).
  */
 export async function unmarkWatched(
   userId: string,
   mediaType: WatchableMediaType,
   mediaId: string,
-): Promise<void> {
+): Promise<UnwatchSnapshot> {
   // Pull matching watchlist items first so we know if anything needs
   // flipping (avoids a no-op UPDATE that still hits the table).
   const matchingItems = await db
-    .select({ id: watchlistItems.id })
+    .select({ id: watchlistItems.id, status: watchlistItems.status, finishedAt: watchlistItems.finishedAt })
     .from(watchlistItems)
     .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
     .where(
@@ -385,17 +427,22 @@ export async function unmarkWatched(
       ),
     );
 
-  const ops: Promise<unknown>[] = [
-    db
-      .delete(watchedTitles)
-      .where(
-        and(
-          eq(watchedTitles.userId, userId),
-          eq(watchedTitles.mediaType, mediaType),
-          eq(watchedTitles.mediaId, mediaId),
-        ),
+  const deletedP = db
+    .delete(watchedTitles)
+    .where(
+      and(
+        eq(watchedTitles.userId, userId),
+        eq(watchedTitles.mediaType, mediaType),
+        eq(watchedTitles.mediaId, mediaId),
       ),
-  ];
+    )
+    .returning({
+      watchedAt: watchedTitles.watchedAt,
+      seenOn: watchedTitles.seenOn,
+      seenPrecision: watchedTitles.seenPrecision,
+      source: watchedTitles.source,
+    });
+  const ops: Promise<unknown>[] = [deletedP];
 
   if (matchingItems.length > 0) {
     ops.push(
@@ -417,6 +464,303 @@ export async function unmarkWatched(
 
   await Promise.all(ops);
   invalidateForYouPool(userId);
+  const [deleted] = await deletedP;
+  return {
+    watchedAt: deleted?.watchedAt.toISOString() ?? null,
+    seen: deleted ? { seenOn: deleted.seenOn, seenPrecision: deleted.seenPrecision, source: deleted.source } : null,
+    items: matchingItems.map((i) => ({
+      id: i.id,
+      status: i.status as (typeof WATCHED_STATUSES)[number],
+      finishedAt: i.finishedAt?.toISOString() ?? null,
+    })),
+  };
+}
+
+export interface UnwatchSnapshot {
+  /** The watched_titles row's date, or null when there was none. */
+  watchedAt: string | null;
+  /** The row's seen date + source, restored with it. */
+  seen: SeenState | null;
+  /** List items that were in a watched status, as they were. */
+  items: { id: string; status: (typeof WATCHED_STATUSES)[number]; finishedAt: string | null }[];
+}
+
+/**
+ * Undoes `unmarkWatched` from its snapshot: re-inserts the watched row with
+ * its original date and puts each list item back in its old status. Items
+ * are owner-gated, so a tampered snapshot can only touch the user's own rows.
+ */
+export async function restoreWatched(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+  snapshot: UnwatchSnapshot,
+): Promise<void> {
+  const ownItems = sql`${watchlistItems.watchlistId} IN (SELECT ${watchlists.id} FROM ${watchlists} WHERE ${watchlists.userId} = ${userId})`;
+  await Promise.all([
+    snapshot.watchedAt
+      ? db
+          .insert(watchedTitles)
+          .values({ userId, mediaType, mediaId, watchedAt: new Date(snapshot.watchedAt), ...(snapshot.seen ?? {}) })
+          .onConflictDoNothing()
+      : Promise.resolve(),
+    ...snapshot.items.map((i) =>
+      db
+        .update(watchlistItems)
+        .set({
+          status: i.status,
+          finishedAt: i.finishedAt ? new Date(i.finishedAt) : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(watchlistItems.id, i.id),
+            eq(watchlistItems.mediaType, mediaType),
+            eq(watchlistItems.mediaId, mediaId),
+            ownItems,
+          ),
+        ),
+    ),
+  ]);
+  invalidateForYouPool(userId);
+}
+
+// ---------------------------------------------------------------------------
+// "Seen it" — logging a watch from anywhere, with an exact undo
+// ---------------------------------------------------------------------------
+
+/** Past watches a member can log per rolling day (Log a watch / search). */
+export const BACKFILL_DAILY_LIMIT = 50;
+
+/** What `logWatch` changed, so `restoreLogWatch` can put it all back. */
+export interface LogWatchSnapshot {
+  /** True when logWatch inserted the watched row (undo deletes it). */
+  createdRow: boolean;
+  /** List items it moved to finished, as they were before. */
+  items: { id: string; status: string; finishedAt: string | null; startedAt: string | null }[];
+}
+
+/**
+ * Marks a title watched: finishes it in any of the member's lists (as Mark as
+ * watched always has) and makes sure a watched row exists, dated `seen` when
+ * given. `source` is 'backfill' for past watches logged from Log a watch or
+ * search, which count against BACKFILL_DAILY_LIMIT. A title that was already
+ * watched is left as it is (`already: true`).
+ */
+export async function logWatch(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+  seen: { date: string | null; precision: WatchedPrecision } | null,
+  source: 'mark' | 'backfill',
+): Promise<{ already: boolean; snapshot: LogWatchSnapshot }> {
+  const key = `${mediaType}:${mediaId}`;
+  if ((await getWatchedKeySet(userId)).has(key)) {
+    return { already: true, snapshot: { createdRow: false, items: [] } };
+  }
+
+  if (source === 'backfill') {
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(watchedTitles)
+      .where(
+        and(
+          eq(watchedTitles.userId, userId),
+          eq(watchedTitles.source, 'backfill'),
+          sql`${watchedTitles.watchedAt} > now() - interval '24 hours'`,
+        ),
+      );
+    if (n >= BACKFILL_DAILY_LIMIT) {
+      throw new ValidationAppError(
+        `You've logged ${BACKFILL_DAILY_LIMIT} past watches today. You can log more tomorrow.`,
+      );
+    }
+  }
+
+  const items = await db
+    .select({
+      id: watchlistItems.id,
+      status: watchlistItems.status,
+      finishedAt: watchlistItems.finishedAt,
+      startedAt: watchlistItems.startedAt,
+    })
+    .from(watchlistItems)
+    .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
+    .where(
+      and(
+        eq(watchlists.userId, userId),
+        eq(watchlistItems.mediaType, mediaType),
+        eq(watchlistItems.mediaId, mediaId),
+        notInArray(watchlistItems.status, [...WATCHED_STATUSES]),
+      ),
+    );
+
+  const now = new Date();
+  const seenOn = seen && seen.precision !== 'unknown' ? seen.date : null;
+  const [created] = await Promise.all([
+    db
+      .insert(watchedTitles)
+      .values({
+        userId,
+        mediaType,
+        mediaId,
+        source,
+        ...(seen ? { seenOn, seenPrecision: seen.precision } : {}),
+      })
+      .onConflictDoNothing()
+      .returning({ mediaId: watchedTitles.mediaId }),
+    items.length > 0
+      ? db
+          .update(watchlistItems)
+          .set({
+            status: 'finished',
+            finishedAt: now,
+            startedAt: sql`COALESCE(${watchlistItems.startedAt}, ${now})`,
+            updatedAt: now,
+          })
+          .where(inArray(watchlistItems.id, items.map((i) => i.id)))
+      : Promise.resolve(),
+  ]);
+  invalidateForYouPool(userId);
+
+  return {
+    already: false,
+    snapshot: {
+      createdRow: created.length > 0,
+      items: items.map((i) => ({
+        id: i.id,
+        status: i.status,
+        finishedAt: i.finishedAt?.toISOString() ?? null,
+        startedAt: i.startedAt?.toISOString() ?? null,
+      })),
+    },
+  };
+}
+
+/** Undoes `logWatch`: drops the row it created and puts list items back. Owner-gated. */
+export async function restoreLogWatch(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+  snapshot: LogWatchSnapshot,
+): Promise<void> {
+  const ownItems = sql`${watchlistItems.watchlistId} IN (SELECT ${watchlists.id} FROM ${watchlists} WHERE ${watchlists.userId} = ${userId})`;
+  await Promise.all([
+    snapshot.createdRow
+      ? db
+          .delete(watchedTitles)
+          .where(
+            and(
+              eq(watchedTitles.userId, userId),
+              eq(watchedTitles.mediaType, mediaType),
+              eq(watchedTitles.mediaId, mediaId),
+            ),
+          )
+      : Promise.resolve(),
+    ...snapshot.items.map((i) =>
+      db
+        .update(watchlistItems)
+        .set({
+          status: i.status as typeof watchlistItems.$inferSelect.status,
+          finishedAt: i.finishedAt ? new Date(i.finishedAt) : null,
+          startedAt: i.startedAt ? new Date(i.startedAt) : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(watchlistItems.id, i.id),
+            eq(watchlistItems.mediaType, mediaType),
+            eq(watchlistItems.mediaId, mediaId),
+            ownItems,
+          ),
+        ),
+    ),
+  ]);
+  invalidateForYouPool(userId);
+}
+
+/** The viewer's watch of one title, for "Seen it" buttons: null when unwatched. */
+export async function getWatchOf(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+): Promise<Pick<WatchedEntry, 'precision' | 'confirmed'> & { watchedAt: string } | null> {
+  const entry = (await getWatchedEntries(userId)).find((e) => e.mediaType === mediaType && e.mediaId === mediaId);
+  return entry ? { watchedAt: entry.watchedAt.toISOString(), precision: entry.precision, confirmed: entry.confirmed } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Seen dates — the member's own "when did you see it"
+// ---------------------------------------------------------------------------
+
+/** A watched row's hand-set date and where the row came from. */
+export interface SeenState {
+  seenOn: string | null;
+  seenPrecision: WatchedPrecision | null;
+  source: 'mark' | 'review' | 'edited' | 'backfill';
+}
+
+/** What `setSeenDate` replaced; `existed: false` means it created the row. */
+export type SeenSnapshot = { existed: false } | { existed: true; state: SeenState };
+
+/**
+ * Sets when the member saw a title they've watched. `date` is 'YYYY-MM-DD'
+ * on the 1st of the period for month/year precision, and null for
+ * 'unknown'. The row is created when the title is only watched through a
+ * finished list item: list items are never rewritten, the row just wins in
+ * the merge. Callers validate the date; this checks the title is watched.
+ */
+export async function setSeenDate(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+  seen: { date: string | null; precision: WatchedPrecision },
+): Promise<SeenSnapshot> {
+  const keys = await getWatchedKeySet(userId);
+  if (!keys.has(`${mediaType}:${mediaId}`)) throw new NotFoundAppError('Not in your watched titles');
+
+  const where = and(
+    eq(watchedTitles.userId, userId),
+    eq(watchedTitles.mediaType, mediaType),
+    eq(watchedTitles.mediaId, mediaId),
+  );
+  const [prev] = await db
+    .select({ seenOn: watchedTitles.seenOn, seenPrecision: watchedTitles.seenPrecision, source: watchedTitles.source })
+    .from(watchedTitles)
+    .where(where)
+    .limit(1);
+
+  const seenOn = seen.precision === 'unknown' ? null : seen.date;
+  await db
+    .insert(watchedTitles)
+    .values({ userId, mediaType, mediaId, seenOn, seenPrecision: seen.precision, source: 'edited' })
+    .onConflictDoUpdate({
+      target: [watchedTitles.userId, watchedTitles.mediaType, watchedTitles.mediaId],
+      set: { seenOn, seenPrecision: seen.precision, source: 'edited' },
+    });
+  revalidateTag(libraryTag(userId), { expire: 0 });
+  return prev ? { existed: true, state: prev } : { existed: false };
+}
+
+/** Undoes `setSeenDate`: puts the old date back, or drops the row it created. */
+export async function restoreSeenDate(
+  userId: string,
+  mediaType: WatchableMediaType,
+  mediaId: string,
+  snapshot: SeenSnapshot,
+): Promise<void> {
+  const where = and(
+    eq(watchedTitles.userId, userId),
+    eq(watchedTitles.mediaType, mediaType),
+    eq(watchedTitles.mediaId, mediaId),
+  );
+  if (snapshot.existed) {
+    await db.update(watchedTitles).set(snapshot.state).where(where);
+  } else {
+    // Only the row setSeenDate made: still hand-dated, never a real mark.
+    await db.delete(watchedTitles).where(and(where, eq(watchedTitles.source, 'edited')));
+  }
+  revalidateTag(libraryTag(userId), { expire: 0 });
 }
 
 // Suppress lint warning for unused desc import — kept for future

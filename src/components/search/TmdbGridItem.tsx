@@ -8,6 +8,9 @@ import { QuickViewLink } from '@/components/watchly/QuickViewLink';
 import { ProviderBadge } from '@/components/ui/ProviderBadge';
 import { NotInRegionPill } from '@/components/ui/NotInRegionPill';
 import { cleanProviderName } from '@/utils/providers';
+import { useState } from 'react';
+import { useAuthStore } from '@/client/stores/auth';
+import { SeenItButton, useWatchedKeys } from '@/components/watched/SeenItButton';
 
 interface TmdbGridItemProps {
   item: SearchResponseItem;
@@ -20,6 +23,12 @@ const MAX_VISIBLE_BADGES = 3;
 
 export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
   const imageUrl = buildImageUrl(item.posterPath, 'w342');
+  const isAuthenticated = useAuthStore((st) => st.status === 'authenticated');
+  // One shared fetch for every card on the page (cachedLoad dedupes).
+  const watchedKeys = useWatchedKeys(isAuthenticated);
+  const key = `${item.mediaType}:${item.id}`;
+  // Set once this card's button logs/removes a watch.
+  const [seen, setSeen] = useState<boolean | undefined>(undefined);
 
   // Normalize + dedupe so "Amazon Prime Video" and "Amazon Prime Video With
   // Ads" collapse to a single "Prime Video" pill on the card.
@@ -30,14 +39,12 @@ export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
   const notInRegion = item.availabilityChecked === true && visible.length === 0;
 
   return (
+    <div className={cn('group/card relative flex flex-col', className)}>
     <QuickViewLink
       mediaType={item.mediaType}
       titleId={item.id}
       onClick={onOpen}
-      className={cn(
-        'group relative flex flex-col rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer',
-        className,
-      )}
+      className="group relative flex flex-1 flex-col rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer"
     >
       <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-muted">
         {imageUrl ? (
@@ -103,6 +110,30 @@ export function TmdbGridItem({ item, className, onOpen }: TmdbGridItemProps) {
         </div>
       </div>
     </QuickViewLink>
+    {/* Seen it: outside the Quick View link. Seen titles keep a filled
+        badge; the rest show the button on hover/focus (always on touch). */}
+    {isAuthenticated && watchedKeys && (
+      <div
+        className={cn(
+          'absolute left-2 top-2 z-10 transition-opacity',
+          !(seen ?? watchedKeys.has(key)) &&
+            'opacity-0 group-hover/card:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100',
+        )}
+      >
+        <SeenItButton
+          mediaType={item.mediaType}
+          mediaId={String(item.id)}
+          title={item.title}
+          posterPath={item.posterPath}
+          year={item.year ?? null}
+          variant="icon"
+          surface="search"
+          knownWatched={watchedKeys.has(key)}
+          onWatchedChange={setSeen}
+        />
+      </div>
+    )}
+    </div>
   );
 }
 

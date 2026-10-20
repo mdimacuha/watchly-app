@@ -78,7 +78,14 @@ export async function exportMyData(userId: string) {
       .where(eq(favoriteShelves.userId, userId))
       .orderBy(asc(favoriteShelves.sortOrder)),
     db
-      .select({ mediaType: watchedTitles.mediaType, tmdbId: watchedTitles.mediaId, watchedAt: watchedTitles.watchedAt })
+      .select({
+        mediaType: watchedTitles.mediaType,
+        tmdbId: watchedTitles.mediaId,
+        loggedAt: watchedTitles.watchedAt,
+        seenOn: watchedTitles.seenOn,
+        seenPrecision: watchedTitles.seenPrecision,
+        source: watchedTitles.source,
+      })
       .from(watchedTitles)
       .where(eq(watchedTitles.userId, userId))
       .limit(ROW_CAP),

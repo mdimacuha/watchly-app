@@ -9,7 +9,11 @@ export type ProfileEventKind =
   | 'section_opened'
   | 'title_opened'
   | 'follow'
-  | 'share';
+  | 'share'
+  | 'watched_date_edited'
+  | 'watched_removed'
+  | 'watched_logged'
+  | 'watched_backfilled';
 
 // One tracker per profile so each batch carries its profileUserId.
 const trackers = new Map<string, ReturnType<typeof makeTracker>>();

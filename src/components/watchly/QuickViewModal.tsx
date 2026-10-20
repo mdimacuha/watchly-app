@@ -25,6 +25,7 @@ import { CollectionQuickViewContent } from '@/components/watchly/CollectionQuick
 import { QuickViewSeasons } from '@/components/watchly/QuickViewSeasons';
 import { CollectionCard } from '@/components/title/CollectionCard';
 import type { TitlePagePayload } from '@/services/tmdb/title';
+import { SeenItButton } from '@/components/watched/SeenItButton';
 
 // ---------------------------------------------------------------------------
 // Global Quick View popup — a lightweight title preview any card can open via
@@ -271,6 +272,16 @@ function QuickViewContent({ mediaType, id, onClose }: QuickViewContentProps) {
               <div className="[&_button]:h-10 [&_button]:w-10 [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button:hover]:bg-secondary/60">
                 <FavoriteButton id={id} type={mediaType} showText={false} fetchInitial />
               </div>
+              <SeenItButton
+                key={`seen-${mediaType}-${id}`}
+                mediaType={mediaType}
+                mediaId={id}
+                title={details.title}
+                posterPath={details.posterPath}
+                year={details.year}
+                variant="square"
+                surface="quick_view"
+              />
             </>
           )}
 

@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   pgEnum,
   primaryKey,
+  date,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -117,6 +118,13 @@ export const apiTokens = pgTable(
 // when the item is in any of the user's watchlists, updateItemStatus
 // sets status='finished' and skips this table. When the user marks
 // something watched that isn't in a list, we record it here.
+// How exact a member's "seen" date is. 'unknown' = "Don't remember".
+export const watchedPrecisionEnum = pgEnum('watched_precision', ['day', 'month', 'year', 'unknown']);
+
+// Where a watched row came from: Mark as watched, a review, a date the
+// member set by hand, or a past watch they logged.
+export const watchedSourceEnum = pgEnum('watched_source', ['mark', 'review', 'edited', 'backfill']);
+
 export const watchedTitles = pgTable(
   'watched_titles',
   {
@@ -125,9 +133,17 @@ export const watchedTitles = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     mediaType: watchlistMediaTypeEnum('media_type').notNull(),
     mediaId: text('media_id').notNull(),
+    // When the watch was logged in Watchly (never edited).
     watchedAt: timestamp('watched_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // When the member says they saw it, at `seenPrecision` (month/year dates
+    // are stored as the 1st of the period). Both null until the member sets
+    // a date; once set they win over watched_at and over a list item's
+    // finished_at. 'unknown' keeps seen_on null.
+    seenOn: date('seen_on', { mode: 'string' }),
+    seenPrecision: watchedPrecisionEnum('seen_precision'),
+    source: watchedSourceEnum('source').notNull().default('mark'),
   },
   (w) => ({
     pk: primaryKey({ columns: [w.userId, w.mediaType, w.mediaId] }),

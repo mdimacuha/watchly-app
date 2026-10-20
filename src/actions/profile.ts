@@ -182,6 +182,34 @@ export async function getProfileFavoritesAction(username: string, opts: { asGues
 }
 
 /**
+ * The next page of a profile's Watched tab ("Show more"), under the same
+ * visibility rules as the profile itself. Hidden → empty page.
+ */
+export async function getProfileWatchedPageAction(
+  username: string,
+  opts: { asGuest?: boolean; offset: number },
+) {
+  const session = await getSession();
+  const viewerId = opts.asGuest ? null : (session?.userId ?? null);
+  const offset = Math.max(0, Math.floor(Number(opts.offset) || 0));
+  const { getPublicProfileByUsername, visibilityPrefsOf } = await import('@/services/profile');
+  const { resolveProfileVisibility } = await import('@/services/profile/visibility');
+  const { getUserPreferencesRow } = await import('@/services/users/rows');
+  const { getFollowState } = await import('@/services/social');
+  const { getEnrichedWatched, WATCHED_PAGE_SIZE } = await import('@/services/watched');
+
+  const profile = await getPublicProfileByUsername(username, viewerId);
+  const [prefsRow, follow] = await Promise.all([
+    getUserPreferencesRow(profile.userId),
+    getFollowState(viewerId, profile.userId),
+  ]);
+  const role =
+    viewerId === profile.userId ? 'owner' : follow.status === 'accepted' ? 'follower' : 'stranger';
+  if (!resolveProfileVisibility(visibilityPrefsOf(prefsRow), role).watched) return [];
+  return getEnrichedWatched(profile.userId, { offset, take: WATCHED_PAGE_SIZE });
+}
+
+/**
  * The locked view for a profile the viewer can't open (private, or
  * followers-only without an accepted follow). `asGuest` mirrors "Preview as
  * visitor".

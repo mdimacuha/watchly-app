@@ -23,7 +23,7 @@ A year-in-review for each member, built on the ticket stubs from the profile's *
 
 ## Data caveats to fix before launch
 
-- **Watch dates are approximate.** "Mark as watched" stamps the moment you tap it, not when you watched it. Old reviews were backfilled with the review date. Wrapped should say "logged in 2026", not "watched in 2026".
+- **Watch dates (largely solved, 2026-10-20).** `watched_titles` now has `seen_on` + `seen_precision` (day / month / year / unknown) and `source` (mark / review / edited / backfill); a hand-set date wins over list `finished_at` (`getWatchedEntries`). Members fix dates on ticket stubs, log past watches ("Admit one"), and "Seen it" exists on title pages, Quick View and search. Rows never hand-dated are still the tap time: say "logged" for those. Per stat, use rows precise enough for it: year totals take day/month/year in the year, "busiest month" day/month, streaks day only; `unknown` never counts.
 - **Series count as one ticket.** There's no per-episode tracking, so total hours for a series should be its full runtime only when it's finished; otherwise leave it out or estimate, and say so.
 - **Re-watches.** `rewatch` items count once in the merged set; decide whether Wrapped shows them separately ("You went back to Skyfall").
 - **Some data is new.** Shelves, swipes and featured titles only exist from mid-2026, so those cards must hide themselves when empty.

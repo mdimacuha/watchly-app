@@ -9,7 +9,7 @@ import { ValidationAppError } from '@/utils/errors';
 const MAX_METADATA_CHARS = 2000;
 
 const eventSchema = z.object({
-  event: z.enum(['profile_viewed', 'section_opened', 'title_opened', 'follow', 'share']),
+  event: z.enum(['profile_viewed', 'section_opened', 'title_opened', 'follow', 'share', 'watched_date_edited', 'watched_removed', 'watched_logged', 'watched_backfilled']),
   titleKey: z
     .string()
     .regex(/^(movie|tv|person):\d+$/)

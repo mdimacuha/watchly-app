@@ -41,20 +41,32 @@ import { trackForYou } from '@/client/forYouEvents';
 import { replaceQuery } from '@/lib/urlState';
 import { markAsWatchedAction } from '@/actions/forYou';
 import { recordSwipeAction, undoSwipeAction } from '@/actions/swipe';
+import { restoreSeenDateAction } from '@/actions/watched';
+import { SeenDateEditor, type SeenDateTarget } from '@/components/watched/SeenDateEditor';
 import type { ContinueItem, ContinueStatus, ForYouPool, PoolPick } from '@/services/forYou/pool';
 
 /** /for-you — the Programme with the Dial. */
 export function ForYouMain({ pool }: { pool: ForYouPool }) {
   const state = usePickState(pool, 'programme');
   useFeedViewed(pool, 'programme');
-  return <ProgrammeView pool={pool} state={state} />;
+  return (
+    <>
+      <ProgrammeView pool={pool} state={state} />
+      {state.seenEditor}
+    </>
+  );
 }
 
 /** /for-you/deeper — the Dial over grouped rows. */
 export function ForYouDeeper({ pool }: { pool: ForYouPool }) {
   const state = usePickState(pool, 'deeper');
   useFeedViewed(pool, 'deeper');
-  return <DeeperView pool={pool} state={state} />;
+  return (
+    <>
+      <DeeperView pool={pool} state={state} />
+      {state.seenEditor}
+    </>
+  );
 }
 
 function useFeedViewed(pool: ForYouPool, variant: string) {
@@ -120,7 +132,26 @@ function usePickState(pool: ForYouPool, variant: string) {
     trackForYou('committed', pick.key, { variant, slot, kind: 'watched' });
     try {
       const where = await markAsWatchedAction(pick.ui.tmdbId, pick.ui.mediaType);
-      toast.success(where === 'watchlist_finished' ? 'Marked finished' : 'Saved to watched', pick.ui.title);
+      // Catch the real date while it's fresh: "today" is often not it.
+      const id = addToast({
+        type: 'success',
+        variant: 'action',
+        title: where === 'watchlist_finished' ? 'Marked finished' : 'Saved to watched',
+        description: pick.ui.title,
+        actionLabel: 'Change date',
+        duration: 6000,
+        onAction: () => {
+          removeToast(id);
+          setSeenTarget({
+            mediaType: pick.ui.mediaType,
+            mediaId: String(pick.ui.tmdbId),
+            title: pick.ui.title,
+            posterPath: pick.ui.posterPath,
+            releaseDate: pick.ui.year ? `${pick.ui.year}-01-01` : null,
+            current: { year: new Date().getFullYear(), month: new Date().getMonth(), day: new Date().getDate() },
+          });
+        },
+      });
     } catch {
       restore(pick.key);
       toast.error("Couldn't mark as watched", 'Please try again.');
@@ -166,7 +197,31 @@ function usePickState(pool: ForYouPool, variant: string) {
   const onSaved = (pick: PoolPick, slot: string) =>
     trackForYou('committed', pick.key, { variant, slot, kind: 'watchlist_open' });
 
-  return { picks, wildcards, available, removed, remove, restore, opened, markWatched, dismiss, onSaved, variant };
+  // "Change date" from the Saved to watched toast.
+  const [seenTarget, setSeenTarget] = useState<SeenDateTarget | null>(null);
+  const seenEditor = seenTarget && (
+    <SeenDateEditor
+      queue={[seenTarget]}
+      onClose={() => setSeenTarget(null)}
+      onSaved={() => {}}
+      onDone={([saved]) => {
+        const id = addToast({
+          type: 'success',
+          variant: 'action',
+          title: 'Date updated',
+          description: saved.target.title,
+          actionLabel: 'Undo',
+          duration: 6000,
+          onAction: () => {
+            removeToast(id);
+            void restoreSeenDateAction(saved.target.mediaType, saved.target.mediaId, saved.snapshot);
+          },
+        });
+      }}
+    />
+  );
+
+  return { picks, wildcards, available, removed, remove, restore, opened, markWatched, dismiss, onSaved, variant, seenEditor };
 }
 
 function meta(pick: PoolPick) {

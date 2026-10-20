@@ -16,6 +16,7 @@ import { TmdbGridItem } from './TmdbGridItem';
 import { Pagination } from './Pagination';
 import { SearchEndCap } from './SearchEndCap';
 import { trackSearch } from '@/client/searchEvents';
+import { SeenItButton } from '@/components/watched/SeenItButton';
 
 interface SearchResultsProps {
   data: SearchResponse | null;
@@ -201,14 +202,26 @@ function TopResult({ item, query, onOpen }: { item: SearchResponseItem; query: s
           {item.providerBadges.length === 0 && item.availabilityChecked && (
             <NotInRegionPill className="w-fit" />
           )}
-          <QuickViewLink
-            mediaType={item.mediaType}
-            titleId={item.id}
-            onClick={onOpen}
-            className="mt-1 inline-flex h-10 w-fit items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Quick view
-          </QuickViewLink>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <QuickViewLink
+              mediaType={item.mediaType}
+              titleId={item.id}
+              onClick={onOpen}
+              className="inline-flex h-10 w-fit items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Quick view
+            </QuickViewLink>
+            <SeenItButton
+              key={`seen-${item.mediaType}-${item.id}`}
+              mediaType={item.mediaType}
+              mediaId={String(item.id)}
+              title={item.title}
+              posterPath={item.posterPath}
+              year={item.year ?? null}
+              surface="search"
+              className="bg-card/60"
+            />
+          </div>
         </div>
       </div>
     </section>

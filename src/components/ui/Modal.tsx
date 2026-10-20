@@ -21,6 +21,8 @@ interface ModalProps {
   hideCloseButton?: boolean;
   /** Extra classes for the scrolling body (e.g. `no-scrollbar`). */
   bodyClassName?: string;
+  /** id of the element that names the dialog, when the content renders its own heading. */
+  labelledBy?: string;
 }
 
 export function Modal({
@@ -31,6 +33,7 @@ export function Modal({
   className,
   hideCloseButton = false,
   bodyClassName,
+  labelledBy,
 }: ModalProps) {
   const accentColor = useAuthStore((s) => s.user?.accentColor ?? null);
 
@@ -82,6 +85,7 @@ export function Modal({
         )}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={labelledBy}
       >
         {title && <h3 className="font-semibold text-lg">{title}</h3>}
         {!hideCloseButton && (

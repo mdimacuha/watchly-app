@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import type { TmdbVideo } from '@/server/tmdb/types';
 import type { CrewPerson, TitlePagePayload } from '@/services/tmdb/title';
 import type { Offer } from './useTitleAvailability';
+import { SeenItButton } from '@/components/watched/SeenItButton';
 
 // Building blocks shared by the title page and Quick View.
 
@@ -200,6 +201,16 @@ export function ActionStack({
           <div className="[&_button]:w-full [&_button]:h-11 [&_button]:justify-start [&_button]:gap-2.5 [&_button]:px-4 [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button:hover]:bg-secondary/60 [&_svg]:w-4 [&_svg]:h-4">
             <FavoriteButton key={id} id={id} type={mediaType} showText fetchInitial />
           </div>
+          <SeenItButton
+            key={`seen-${id}`}
+            mediaType={mediaType}
+            mediaId={id}
+            title={details.title}
+            posterPath={details.posterPath}
+            year={details.year}
+            variant="stack"
+            surface="title"
+          />
         </>
       ) : (
         <Button variant="secondary" asChild className={STACK_BTN}>

@@ -36,6 +36,7 @@ import { StoryExportButton } from '@/components/profile/StoryExportButton';
 import { ProfileLibrary, favoritesLoad } from '@/components/profile/ProfileLibrary';
 import { prefetch, useCachedLoad } from '@/client/cachedLoad';
 import { MutualFollowersModal } from '@/components/profile/MutualFollowersModal';
+import { EMPTY_WATCHED_LOCAL, type WatchedLocal } from '@/components/profile/WatchedTickets';
 import { AccentPicker } from '@/components/profile/AccentPicker';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,9 @@ export function MemberProfile({ showcase, preview }: Props) {
   const owner = overview.isSelf && !preview;
   // Local accent so swatches recolor instantly (saved in the background).
   const [accent, setAccent] = useState<AccentColor | null>(overview.profile.accentColor);
+  // Watched tab changes this visit (removals, new dates, loaded pages); held
+  // here so they survive tab switches until the next server load agrees.
+  const [watchedLocal, setWatchedLocal] = useState<WatchedLocal>(EMPTY_WATCHED_LOCAL);
 
   useEffect(() => {
     trackProfile(ownerId, 'profile_viewed', undefined, {
@@ -138,7 +142,14 @@ export function MemberProfile({ showcase, preview }: Props) {
           <ByTheNumbers showcase={showcase} />
         </div>
       )}
-      {tab === 'library' && <ProfileLibrary showcase={showcase} preview={preview} />}
+      {tab === 'library' && (
+        <ProfileLibrary
+          showcase={showcase}
+          preview={preview}
+          watchedLocal={watchedLocal}
+          onWatchedLocalChange={setWatchedLocal}
+        />
+      )}
       {tab === 'reviews' && <Reviews showcase={showcase} preview={preview} />}
     </AccentScope>
   );
@@ -390,6 +401,7 @@ function SocialLine({ overview }: { overview: Overview }) {
             isOpen={mutualsOpen}
             onClose={() => setMutualsOpen(false)}
             targetId={overview.profile.userId}
+            username={u}
             initial={mutuals.users}
             totalCount={mutuals.totalCount}
           />
