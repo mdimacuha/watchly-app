@@ -87,7 +87,7 @@ export default async function CollectionPage({
       <div className="relative w-full h-[40vh] md:h-[50vh]">
         {/* Floating back control over the hero image. */}
         <BackLink
-          fallbackHref="/for-you"
+          fallbackHref="/programme"
           className="absolute top-4 left-4 md:top-6 md:left-6 z-20 rounded-full bg-background/70 hover:bg-background/90 backdrop-blur-sm border border-border/60 px-3 py-1.5 shadow-sm"
         />
         {collection.backdropPath && (

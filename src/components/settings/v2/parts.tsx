@@ -177,6 +177,12 @@ export function PrivacyControls({ s }: { s: SettingsState }) {
           checked={!p.hideWatched}
           onChange={(on) => s.updatePrivacy({ hideWatched: !on })}
         />
+        <SwitchRow
+          label="Show my likes"
+          sentence="Titles you liked in Watchly Swipe and For You, in a Likes tab on your profile. Off by default."
+          checked={!p.hideLikes}
+          onChange={(on) => s.updatePrivacy({ hideLikes: !on })}
+        />
       </div>
       <ShelfToggles s={s} />
     </div>
@@ -475,7 +481,7 @@ export function ServicesControl({ s }: { s: SettingsState }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm font-semibold text-foreground">My streaming services</p>
-      <p className="text-xs text-muted-foreground">For You only recommends what&apos;s on these. Pick none to see everything in your region.</p>
+      <p className="text-xs text-muted-foreground">Tonight&apos;s Programme only recommends what&apos;s on these. Pick none to see everything in your region.</p>
       <PreferencesPicker initialSelected={s.snapshot.forYou.selectedProviders} catalog={s.snapshot.forYou.catalog} />
     </div>
   );

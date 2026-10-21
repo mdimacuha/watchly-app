@@ -302,6 +302,9 @@ export const userPreferences = pgTable(
     // Watched titles are more intimate than favorites/watchlists — default
     // to hidden on the public profile. Owner always sees their own list.
     hideWatched: boolean('hide_watched').notNull().default(true),
+    // Likes (Swipe + For You) are taste signals, not picks — hidden from
+    // visitors until the owner opts in. Owner always sees their own.
+    hideLikes: boolean('hide_likes').notNull().default(true),
 
     // appearance — null = follow system / unchosen. Plain text so the value
     // space can grow (e.g. a future 'auto-dim-after-9pm') without a migration.
@@ -758,7 +761,8 @@ export const titleSwipes = pgTable(
     // if/when we add e.g. 'snoozed'.
     action: text('action').notNull(),
 
-    // 'swipe_discovery' | 'onboarding' | 'recommendation' | 'manual'.
+    // 'swipe_discovery' | 'onboarding' | 'recommendation' | 'manual' | 'reel'.
+    // 'reel' = the For You trailer reel (older reel likes say 'recommendation').
     // Helps split analytics later — defaults to the swipe deck.
     source: text('source').notNull().default('swipe_discovery'),
 

@@ -1,7 +1,7 @@
 import { SkeletonBox } from '@/components/watchly/skeletons';
 
 /**
- * Route-level loading UI for /for-you. Mirrors Tonight's Programme
+ * Route-level loading UI for /programme. Mirrors Tonight's Programme
  * (ForYouProgramme): header + services button, the Continue strip, the Dial,
  * the Feature, two Supports and the Wildcard — so content fills in without
  * layout shift.

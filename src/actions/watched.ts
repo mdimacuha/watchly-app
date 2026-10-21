@@ -43,7 +43,7 @@ export async function markAsWatchedAction(
 ): Promise<'watchlist_finished' | 'watched_table'> {
   const userId = await requireUserId();
   const where = await markAsWatched(userId, mediaType, mediaId);
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   revalidatePath('/me');
   return where;
 }
@@ -61,7 +61,7 @@ export async function unmarkWatchedAction(
   const userId = await requireUserId();
   const snapshot = await unmarkWatched(userId, mediaType, mediaId);
   revalidatePath('/me');
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   return snapshot;
 }
 
@@ -97,7 +97,7 @@ export async function restoreWatchedAction(
   if (!parsed.success || !type.success || !/^\d+$/.test(mediaId)) throw new ValidationAppError('Invalid undo');
   await restoreWatched(userId, type.data, mediaId, parsed.data);
   revalidatePath('/me');
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +264,7 @@ export async function logWatchAction(
     );
     const watch = await getWatchOf(userId, ref.data.mediaType, ref.data.mediaId);
     revalidatePath('/me');
-    revalidatePath('/for-you');
+    revalidatePath('/programme');
     return { ok: true, already, snapshot, watch };
   } catch (err) {
     if (err instanceof ValidationAppError) return { ok: false, error: err.message };
@@ -308,5 +308,5 @@ export async function restoreLogWatchAction(
   if (!ref.success || !parsed.success) throw new ValidationAppError('Invalid undo');
   await restoreLogWatch(userId, ref.data.mediaType, ref.data.mediaId, parsed.data);
   revalidatePath('/me');
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
 }

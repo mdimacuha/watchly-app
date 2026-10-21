@@ -74,17 +74,18 @@ function isInteractive(el: Element | null): boolean {
 }
 
 /**
- * The single most recent committed swipe, stashed so a one-step Undo can
- * restore the card and reverse both the DB row and (only if this swipe
- * newly created it) the favorite.
+ * The single most recent committed swipe, stashed the moment the card
+ * leaves (not when the server answers) so a one-step Undo always targets
+ * the newest frame. `record` resolves to the row id and whether THIS swipe
+ * created a fresh favorite — the guard that keeps undo from deleting a
+ * pre-existing favorite.
  */
 interface LastSwipe {
   item: SwipeDeckItem;
   action: Action;
-  swipeId: string;
-  /** True only when THIS swipe created a fresh favorite — the guard that
-   *  keeps undo from deleting a pre-existing favorite. */
-  favoriteAdded: boolean;
+  /** The reel frame this swipe dropped, so undo removes exactly that one. */
+  frameKey: string;
+  record: Promise<{ swipeId: string; favoriteAdded: boolean }>;
 }
 
 /**
@@ -122,6 +123,8 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
   // frame), both handlers see `submitting === false` and both record
   // a swipe. A ref updates synchronously and shuts the race down.
   const inFlightRef = useRef(false);
+  // A card is animating off screen and hasn't committed yet.
+  const flyingRef = useRef(false);
 
   // How long the gate stays closed after a commit STARTS (not after the
   // server answers — see `commit`). Absorbs a double-tap / button+key on the
@@ -239,7 +242,7 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
         `${ACTION_LABEL[action]}: ${item.title}.${next ? ` Now showing ${next.title}.` : ''}`,
       );
 
-      void enqueueWrite(() =>
+      const record = enqueueWrite(() =>
         recordSwipeAction({
           tmdbId: item.tmdbId,
           mediaType: item.mediaType,
@@ -247,21 +250,18 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
           scoreSnapshot: item.recommendationScore,
           metadata,
         }),
-      )
+      );
+      // This swipe owns undo from now on, even before the server answers —
+      // otherwise a fast pull-up / Z / Rewind would undo the swipe before it.
+      // The previous swipe's toast goes too, so its Undo can't hit this one.
+      setLastSwipe({ item, action, frameKey, record });
+      dismissSwipeToast();
+
+      void record
         .then((result) => {
-          if (seq !== commitSeqRef.current) return; // a newer swipe owns undo
-          // Stash as the undoable swipe (single-step). `favoriteAdded`
-          // threads through so Undo only reverses a favorite this swipe
-          // actually created.
-          setLastSwipe({
-            item,
-            action,
-            swipeId: result.swipeId,
-            favoriteAdded: result.favoriteAdded,
-          });
+          if (seq !== commitSeqRef.current) return; // a newer swipe owns the toast
           // One toast per swipe, replacing the previous one so fast swiping
           // doesn't stack them. It names the verdict and offers Undo.
-          dismissSwipeToast();
           swipeToastIdRef.current = addToast({
             type: action === 'passed' ? 'info' : 'success',
             variant: 'action',
@@ -279,6 +279,7 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
           // Roll back: put the card back on top so the user can retry.
           setItems((prev) => [item, ...prev]);
           setReel((prev) => prev.filter((f) => f.key !== frameKey));
+          setLastSwipe((cur) => (cur?.frameKey === frameKey ? null : cur));
           toast.error(
             'Swipe failed',
             err instanceof Error ? err.message : 'Please try again.',
@@ -294,7 +295,9 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
   // the favorite when this swipe created it). Guarded against firing during
   // an in-flight commit via the same inFlightRef gate.
   const undo = useCallback(async () => {
-    if (inFlightRef.current || !lastSwipe) return;
+    // While a card is still flying out, "the last swipe" is about to be that
+    // card. Undoing now would hit the one before it.
+    if (inFlightRef.current || flyingRef.current || !lastSwipe) return;
     // Same short gate as a commit — the server delete runs in the ordered
     // write queue, so the deck doesn't wait on it.
     inFlightRef.current = true;
@@ -311,23 +314,29 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
     setItems((prev) => [snapshot.item, ...prev]);
     setLastSwipe(null);
     dismissSwipeToast();
-    setReel((prev) => {
-      const i = prev.findIndex((f) => deckKey(f.item) === deckKey(snapshot.item));
-      return i === -1 ? prev : [...prev.slice(0, i), ...prev.slice(i + 1)];
-    });
+    // A save still in flight must not pop its "Liked · X [Undo]" toast now.
+    commitSeqRef.current += 1;
+    setReel((prev) => prev.filter((f) => f.key !== snapshot.frameKey));
     positionRef.current = Math.max(0, positionRef.current - 1);
     setAnnouncement(`Undid ${ACTION_LABEL[snapshot.action].toLowerCase()}: ${snapshot.item.title}.`);
 
     try {
-      await enqueueWrite(() =>
-        undoSwipeAction({
-          swipeId: snapshot.swipeId,
+      // Queued now (before any re-swipe of the restored card), so the delete
+      // lands after this swipe's save and before the next one. The save sits
+      // earlier in the same queue, so its row id is ready when this runs. If
+      // the save failed, its rollback already handled the card: nothing to undo.
+      const saved = await enqueueWrite(async () => {
+        const rec = await snapshot.record.catch(() => null);
+        if (!rec) return null;
+        await undoSwipeAction({
+          swipeId: rec.swipeId,
           tmdbId: snapshot.item.tmdbId,
           mediaType: snapshot.item.mediaType,
-          reverseFavorite: snapshot.favoriteAdded,
-        }),
-      );
-      if (snapshot.favoriteAdded) {
+          reverseFavorite: rec.favoriteAdded,
+        });
+        return rec;
+      });
+      if (saved?.favoriteAdded) {
         toast.info('Removed from favorites', snapshot.item.title);
       }
     } catch (err) {
@@ -354,19 +363,27 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
     (action: Action, input: SwipeInput) => {
       if (!current || inFlightRef.current) return;
       pendingInputRef.current = input;
-      if (cardRef.current) cardRef.current.swipe(ACTION_DIRECTION[action]);
-      else commit(action, input);
+      if (cardRef.current) {
+        flyingRef.current = true;
+        cardRef.current.swipe(ACTION_DIRECTION[action]);
+      } else commit(action, input);
     },
     [current, commit],
   );
   const handleCardSwipe = useCallback(
-    (direction: SwipeDirection, viaDrag: boolean) =>
-      commit(DIRECTION_ACTION[direction], viaDrag ? 'drag' : pendingInputRef.current),
+    (direction: SwipeDirection, viaDrag: boolean) => {
+      flyingRef.current = false;
+      return commit(DIRECTION_ACTION[direction], viaDrag ? 'drag' : pendingInputRef.current);
+    },
     [commit],
   );
   // Asked by the card on drag release: refuse early (spring back) rather
-  // than fly off and get rejected.
-  const canCommit = useCallback(() => !inFlightRef.current, []);
+  // than fly off and get rejected. A yes means the card is now flying out.
+  const canCommit = useCallback(() => {
+    if (inFlightRef.current) return false;
+    flyingRef.current = true;
+    return true;
+  }, []);
 
   const openAddToWatchlist = useCallback(() => {
     if (!current) return;
@@ -402,6 +419,8 @@ export function SwipeDeckClient({ initialItems }: SwipeDeckClientProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (pickerOpen || quickViewOpen) return;
+      // Any other dialog (e.g. How it works) owns the keyboard too.
+      if (document.querySelector('[role="dialog"]')) return;
       // Ignore OS keyboard auto-repeat. Holding a key briefly (200-300ms
       // depending on OS settings) would otherwise fire commit on the
       // NEXT card after the first commit's cooldown elapses — looks to

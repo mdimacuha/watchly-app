@@ -8,13 +8,14 @@ import { useToast } from '@/hooks/useToast';
 import { useShelves } from './useShelves';
 import type { ShelvesPayload } from '@/services/favorites/shelves';
 import { EmptyResults, FavHeader, FavToolbar, favKey, useFavoritesView, type Fav } from './favoritesParts';
-import { BulkBar, ShelfGrid, ShelfHeadingMenu, ShelfRail, ShelfVisibilityToggle, shelfColor, suggestShelves, useEntered, useShelfDialogs, useShelfDrop } from './shelfParts';
+import { BulkBar, ShelfGrid, ShelfHeadingMenu, ShelfVisibilityToggle, shelfColor, suggestShelves, useEntered, useShelfDialogs, useShelfDrop } from './shelfParts';
 import { SortSession } from './SortSession';
+import { ShelfCards } from './ShelfCards';
 
 /**
  * /favorites. Shelves are spines on a rail that stand taller as they fill —
  * click one to open it, drag a card onto one to shelve it — or, in the wide
- * view, a poster rail per shelf. Before the first shelf exists, suggested
+ * view, a card per shelf (ShelfCards). Before the first shelf exists, suggested
  * shelves sit on the rail as dashed ghost spines. Select mode for bulk
  * actions, Sort session for the backlog. Shelves persist via useShelves.
  */
@@ -56,15 +57,26 @@ export function FavoritesPageClient({ favorites, shelves }: { favorites: Fav[]; 
     } catch {}
   };
 
+  // The shelf just made in wide view, for the cards to open (see ShelfCards `focusId`).
+  const [createdInWide, setCreatedInWide] = useState<string | null>(null);
   const d = useShelfDialogs(f, {
     onCreated: (id) => {
-      if (view === 'wide') setViewState('shelf');
-      goToShelf(id);
+      // Wide stays wide: the new shelf opens in place among the cards.
+      if (view === 'wide') setCreatedInWide(id);
+      else goToShelf(id);
     },
     onDeleted: () => goToShelf(null),
   });
   const drop = useShelfDrop(f);
   const toast = useToast();
+  // Wide → a shelf: switch back to the spine view with that shelf open.
+  const openFromWide = (id: string) => {
+    setViewState('shelf');
+    try {
+      localStorage.setItem(VIEW_KEY, 'shelf');
+    } catch {}
+    goToShelf(id);
+  };
 
   const shelf = view === 'wide' ? null : (f.folders.find((x) => x.id === open) ?? null);
   const items = v.filter(shelf ? v.list.filter((x) => f.foldersOf(favKey(x)).includes(shelf.id)) : v.list);
@@ -91,8 +103,8 @@ export function FavoritesPageClient({ favorites, shelves }: { favorites: Fav[]; 
       </div>
 
       {view === 'wide' ? (
-        <div className="-mt-4 flex flex-col gap-2">
-          {f.folders.length === 0 ? (
+        f.folders.length === 0 ? (
+          <div className="-mt-4">
             <EmptyResults>
               No shelves yet.{' '}
               <button type="button" onClick={() => setView('shelf')} className="font-semibold text-foreground underline underline-offset-4">
@@ -100,30 +112,22 @@ export function FavoritesPageClient({ favorites, shelves }: { favorites: Fav[]; 
               </button>{' '}
               for suggestions, or press New shelf.
             </EmptyResults>
-          ) : (
-            f.folders.map((folder, i) => (
-              <ShelfRail
-                key={folder.id}
-                enterIndex={i}
-                label={folder.name}
-                color={shelfColor(folder)}
-                folder={folder}
-                d={d}
-                f={f}
-                items={f.keysIn(folder.id).map((k) => v.byKey.get(k)).filter((x): x is Fav => !!x)}
-                onOpen={() => {
-                  setViewState('shelf');
-                  try {
-                    localStorage.setItem(VIEW_KEY, 'shelf');
-                  } catch {}
-                  goToShelf(folder.id);
-                }}
-                dropping={drop.over === folder.id}
-                dropProps={drop.props(folder.id, folder.name)}
-              />
-            ))
-          )}
-        </div>
+          </div>
+        ) : (
+          <ShelfCards
+            className="-mt-4"
+            // Public shelves (the ones on your profile) first, then the rest, each in your order.
+            shelves={[...f.folders].sort((x, y) => Number(y.isPublic) - Number(x.isPublic)).map((folder) => ({
+              id: folder.id,
+              name: folder.name,
+              folder,
+              color: shelfColor(folder),
+              items: f.keysIn(folder.id).map((k) => v.byKey.get(k)).filter((x): x is Fav => !!x),
+            }))}
+            edit={{ f, d, onOpenInShelfView: openFromWide, dropOver: drop.over, dropProps: drop.props }}
+            focusId={createdInWide}
+          />
+        )
       ) : (
       /* pt-4: headroom for the selected spine's lift + outline (overflow-x clips vertically too). */
       <div className="-mt-4 flex items-end gap-1.5 overflow-x-auto border-b-4 border-secondary px-1 pt-4 no-scrollbar" role="tablist" aria-label="Shelves">
@@ -223,8 +227,7 @@ export function FavoritesPageClient({ favorites, shelves }: { favorites: Fav[]; 
           onCancel={endSelect}
         />
       )}
-      {sorting && <SortSession unshelved={unshelved} all={v.list} f={f} onClose={() => setSorting(false)} />}
-      {d.dialogs}
+      {sorting && <SortSession unshelved={unshelved} all={v.list} f={f} onClose={() => setSorting(false)} />}      {d.dialogs}
     </div>
   );
 }

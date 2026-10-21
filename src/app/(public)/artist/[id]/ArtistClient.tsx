@@ -56,7 +56,7 @@ export function ArtistClient({ payload }: ArtistClientProps) {
         <div className="absolute inset-0 bg-linear-to-b from-primary/5 to-background z-0" />
 
         <div className="container relative z-10 px-4 pt-24 pb-12 mx-auto">
-          <BackLink fallbackHref="/for-you" className="mb-8" />
+          <BackLink fallbackHref="/programme" className="mb-8" />
           <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
             {/* Profile Image */}
             <div className="shrink-0 w-48 h-72 relative rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10">
@@ -178,7 +178,7 @@ export function ArtistClient({ payload }: ArtistClientProps) {
                     as {credit.character || 'Unknown'}
                   </span>
                 ) : (
-                  <span className="italic block truncate">
+                  <span className="italic block truncate" title={credit.job || credit.department}>
                     {credit.job || credit.department}
                   </span>
                 )}

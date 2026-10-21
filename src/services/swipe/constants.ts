@@ -12,6 +12,8 @@ export const SWIPE_SOURCES = [
   'onboarding',
   'recommendation',
   'manual',
+  // The For You trailer reel. Reel likes recorded before this say 'recommendation'.
+  'reel',
 ] as const;
 export type SwipeSource = (typeof SWIPE_SOURCES)[number];
 

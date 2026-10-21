@@ -138,6 +138,7 @@ async function followersCanSee(actorId: string, event: FanoutEvent): Promise<boo
       watchlistsVisibility: userPreferences.watchlistsVisibility,
       hideFavorites: userPreferences.hideFavorites,
       hideWatched: userPreferences.hideWatched,
+      hideLikes: userPreferences.hideLikes,
     })
     .from(userPreferences)
     .where(eq(userPreferences.userId, actorId))

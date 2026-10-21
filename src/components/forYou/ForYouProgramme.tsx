@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * For You.
+ * Tonight's Programme.
  *
- *   /for-you         — The Programme (Feature · 2 Supports · Wildcard) with
+ *   /programme       — The Programme (Feature · 2 Supports · Wildcard) with
  *                      the Dial (time + mood) on top: turning it refills the
  *                      slots with titles that fit.
- *   /for-you/deeper  — "Go deeper": the Dial over compact rows, grouped as
+ *   /programme/deeper — "Go deeper": the Dial over compact rows, grouped as
  *                      "Because you liked X" sections + "Something different".
  *
  * The dial lives in the URL (?time=&mood=) so it carries over to Deeper.
@@ -45,7 +45,7 @@ import { restoreSeenDateAction } from '@/actions/watched';
 import { SeenDateEditor, type SeenDateTarget } from '@/components/watched/SeenDateEditor';
 import type { ContinueItem, ContinueStatus, ForYouPool, PoolPick } from '@/services/forYou/pool';
 
-/** /for-you — the Programme with the Dial. */
+/** /programme — the Programme with the Dial. */
 export function ForYouMain({ pool }: { pool: ForYouPool }) {
   const state = usePickState(pool, 'programme');
   useFeedViewed(pool, 'programme');
@@ -57,7 +57,7 @@ export function ForYouMain({ pool }: { pool: ForYouPool }) {
   );
 }
 
-/** /for-you/deeper — the Dial over grouped rows. */
+/** /programme/deeper — the Dial over grouped rows. */
 export function ForYouDeeper({ pool }: { pool: ForYouPool }) {
   const state = usePickState(pool, 'deeper');
   useFeedViewed(pool, 'deeper');
@@ -368,7 +368,7 @@ function NoTaste() {
     <div className="rounded-xl border border-border bg-card p-8 text-center">
       <p className="text-h3">Nothing to pick from yet</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Favorite a few titles or swipe through some picks — For You learns from both.
+        Favorite a few titles or swipe through some picks — Tonight&apos;s Programme learns from both.
       </p>
       <div className="mt-4 flex justify-center">
         <Link href="/swipe" className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
@@ -521,7 +521,7 @@ function ProgrammeView({ pool, state }: { pool: ForYouPool; state: PickState }) 
             </section>
           )}
 
-          <EndCap line="That's tonight." deeperHref={`/for-you/deeper${dial.query}`} />
+          <EndCap line="That's tonight." deeperHref={`/programme/deeper${dial.query}`} />
         </>
       )}
     </div>
@@ -814,7 +814,7 @@ function DeeperView({ pool, state }: { pool: ForYouPool; state: PickState }) {
   return (
     <div className="flex flex-col gap-8">
       <Link
-        href={`/for-you${dial.query}`}
+        href={`/programme${dial.query}`}
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" /> Tonight&apos;s programme

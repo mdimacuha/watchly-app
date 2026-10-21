@@ -68,6 +68,7 @@ export const RESERVED_USERNAMES = new Set<string>([
   'discover',
   'search',
   'for-you',
+  'programme',
   'foryou',
   'swipe',
   'favorites',

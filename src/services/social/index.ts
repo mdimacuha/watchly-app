@@ -484,7 +484,7 @@ export async function getMutualFollowers(
 // connections (friends-of-friends). We take the accounts the viewer's
 // followees follow, rank each candidate by how many of the viewer's followees
 // reach it (mutual count) desc, and exclude self / blocked / already-followed
-// (any status). For viewers with a thin graph (brand-new users, users who
+// (any status) / accounts that haven't verified their email. For viewers with a thin graph (brand-new users, users who
 // follow nobody) we top up with a global popularity fallback (the old v1
 // ordering) so the row is never empty.
 // ---------------------------------------------------------------------------
@@ -548,10 +548,14 @@ export async function getFollowSuggestions(
       mutuals: sql<number>`count(*)::int`,
     })
     .from(userFollows)
+    // Only email-verified accounts are suggested (filtered in SQL so the
+    // limit isn't spent on accounts that would be dropped).
+    .innerJoin(users, eq(users.id, userFollows.followingId))
     .where(
       and(
         eq(userFollows.status, 'accepted'),
         inArray(userFollows.followerId, viewerFollowees),
+        eq(users.isVerified, true),
       ),
     )
     .groupBy(userFollows.followingId)
@@ -590,7 +594,7 @@ export async function getFollowSuggestions(
     })
     .from(users)
     .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
-    .where(eq(users.isDeleted, false))
+    .where(and(eq(users.isDeleted, false), eq(users.isVerified, true)))
     .orderBy(sql`(
       SELECT count(*)::int FROM ${userFollows}
       WHERE ${userFollows.followingId} = ${users.id}

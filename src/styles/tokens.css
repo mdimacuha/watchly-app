@@ -74,6 +74,28 @@
   --shadow-elevation-input: 0 1px 4px -1px rgba(15, 15, 20, 0.06);
 }
 
+/* A subtree that stays dark in light mode (e.g. the For You reel card, whose
+   text sits on a dimmed poster). The --color-* aliases are re-declared so
+   utilities resolve against these values, not the ones on <html>. */
+.theme-dark {
+  --background: #09090b;
+  --card: #18181b;
+  --secondary: #27272a;
+  --border: #27272a;
+  --foreground: #fafafa;
+  --muted-foreground: #a1a1aa;
+  --input: #27272a;
+
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-secondary: var(--secondary);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-input: var(--input);
+  color: var(--foreground);
+}
+
 @layer utilities {
   .text-h1 {
     font-size: 32px;

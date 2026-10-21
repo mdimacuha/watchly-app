@@ -14,6 +14,7 @@ const PATHS = {
   },
   SEARCH: '/search',
   FOR_YOU: '/for-you',
+  PROGRAMME: '/programme',
   SWIPE: '/swipe',
   CHANGELOGS: '/changelogs',
   WATCHLISTS: '/watchlists',

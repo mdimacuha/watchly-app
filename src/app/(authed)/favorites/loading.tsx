@@ -6,7 +6,7 @@ import {
 
 export default function FavoritesLoading() {
   return (
-    <div className="px-8 py-10 max-w-7xl mx-auto w-full flex flex-col gap-6">
+    <div className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full flex flex-col gap-6">
       <PageHeaderSkeleton />
       <SkeletonBox className="h-4 w-80 opacity-70" />
 

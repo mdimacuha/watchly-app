@@ -5,7 +5,7 @@ import {
 
 export default function WatchlistsLoading() {
   return (
-    <div className="px-8 py-10 max-w-6xl mx-auto w-full flex flex-col gap-6">
+    <div className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <PageHeaderSkeleton />
         <SkeletonBox className="h-10 w-28" />

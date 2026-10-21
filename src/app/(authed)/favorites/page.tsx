@@ -9,7 +9,7 @@ export default async function FavoritesPage() {
   const [favorites, shelves] = await Promise.all([getEnrichedFavoritesAction(), listShelvesAction()]);
 
   return (
-    <div className="px-4 sm:px-8 py-10">
+    <div className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full">
       <FavoritesPageClient favorites={favorites} shelves={shelves} />
     </div>
   );

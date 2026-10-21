@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     // Story export embeds the wordmark from disk (server/profile/storyImage).
     '/api/me/profile/story': ['./public/brand-light.svg'],
   },
+  // The Programme moved from /for-you to /programme; keep old Deeper / View All
+  // links working. Temporary (not 308) so /for-you can grow sub-pages later.
+  async redirects() {
+    return [{ source: '/for-you/:path+', destination: '/programme/:path+', permanent: false }];
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
   },

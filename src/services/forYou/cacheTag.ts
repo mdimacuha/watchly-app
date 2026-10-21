@@ -22,6 +22,17 @@ export function invalidateForYouPool(userId: string, opts: { library?: boolean }
 }
 
 /**
+ * Swipes and likes: mark the pool stale instead of expiring it. The next
+ * read serves the stale pool at once and rebuilds it in the background
+ * (a cold build is seconds of TMDB/JustWatch calls, and swipes come in
+ * bursts). `getForYouPool` drops freshly swiped titles from a stale pool
+ * at read time, so a passed title still disappears straight away.
+ */
+export function staleForYouPool(userId: string): void {
+  revalidateTag(forYouTag(userId), 'max');
+}
+
+/**
  * Per-user tag on the profile's heavier library caches — taste profile,
  * enriched watched list, watchlist runtimes. Busted with the pool by
  * favorites / watched / watchlist writes, but not by swipes or provider

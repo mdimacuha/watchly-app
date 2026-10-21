@@ -33,8 +33,8 @@ export function WelcomeEmail({
         </Button>
       </Section>
       <Text style={paragraphMuted}>
-        New to Watchly? Try adding a favorite from search — your For You
-        feed starts personalizing the moment you do.
+        New to Watchly? Try adding a favorite from search — Tonight&apos;s Programme
+        starts picking for you the moment you do.
       </Text>
     </EmailLayout>
   );

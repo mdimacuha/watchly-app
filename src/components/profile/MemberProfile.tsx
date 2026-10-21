@@ -34,6 +34,7 @@ import { AccentScope } from '@/components/profile/AccentScope';
 import { ProfileEditModal } from '@/components/profile/ProfileEditModal';
 import { StoryExportButton } from '@/components/profile/StoryExportButton';
 import { ProfileLibrary, favoritesLoad } from '@/components/profile/ProfileLibrary';
+import { ProfileLikes } from '@/components/profile/ProfileLikes';
 import { prefetch, useCachedLoad } from '@/client/cachedLoad';
 import { MutualFollowersModal } from '@/components/profile/MutualFollowersModal';
 import { EMPTY_WATCHED_LOCAL, type WatchedLocal } from '@/components/profile/WatchedTickets';
@@ -56,18 +57,22 @@ interface Props {
   preview: boolean;
 }
 
-type Tab = 'profile' | 'library' | 'reviews';
+type Tab = 'profile' | 'library' | 'reviews' | 'likes';
 
 export function MemberProfile({ showcase, preview }: Props) {
   const searchParams = useSearchParams();
-  // ?tab=reviews | library | favorites (links from notifications) open that tab.
-  const tabParam = searchParams.get('tab');
-  const [tab, setTab] = useState<Tab>(() =>
-    tabParam === 'reviews' ? 'reviews' : tabParam === 'library' || tabParam === 'favorites' ? 'library' : 'profile',
-  );
   const { overview } = showcase;
   const ownerId = overview.profile.userId;
   const owner = overview.isSelf && !preview;
+  // Likes are hidden from visitors unless the owner turns them on.
+  const showLikes = owner || !overview.likesHidden;
+  // ?tab=reviews | library | favorites | likes (links from notifications) open that tab.
+  const tabParam = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(() =>
+    tabParam === 'likes' && showLikes
+      ? 'likes'
+      : tabParam === 'reviews' ? 'reviews' : tabParam === 'library' || tabParam === 'favorites' ? 'library' : 'profile',
+  );
   // Local accent so swatches recolor instantly (saved in the background).
   const [accent, setAccent] = useState<AccentColor | null>(overview.profile.accentColor);
   // Watched tab changes this visit (removals, new dates, loaded pages); held
@@ -118,7 +123,7 @@ export function MemberProfile({ showcase, preview }: Props) {
       {owner && <PeopleYouMightKnow suggestions={showcase.followSuggestions} />}
 
       <nav role="tablist" aria-label="Profile sections" className="flex gap-1 border-b border-border">
-        {(['profile', 'library', 'reviews'] as Tab[]).map((t) => (
+        {(['profile', 'library', 'reviews', ...(showLikes ? ['likes'] : [])] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
@@ -156,6 +161,9 @@ export function MemberProfile({ showcase, preview }: Props) {
         />
       )}
       {tab === 'reviews' && <Reviews showcase={showcase} preview={preview} />}
+      {tab === 'likes' && showLikes && (
+        <ProfileLikes username={overview.profile.username} owner={owner} preview={preview} hidden={overview.profile.hideLikes} />
+      )}
     </AccentScope>
   );
 }

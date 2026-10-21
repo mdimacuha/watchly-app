@@ -1,18 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Image from 'next/image';
 import { Check, Globe, HeartOff, Lock, Pencil, Plus, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { buildImageUrl } from '@/lib/tmdb';
 import { ACCENTS, ACCENT_SLUGS, getAccent } from '@/constants/accentColors';
 import { ConfirmDestructiveModal } from '@/components/ui/ConfirmDestructiveModal';
-import { ArrowStrip } from '@/components/ui/ArrowStrip';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
 import type { Folder, FoldersApi } from './useShelves';
-import { EmptyResults, FavCard, Menu, NameDialog, favImage, favKey, favName, favRating, favYear, menuItem, type Fav, type FavView } from './favoritesParts';
-import { QuickViewLink } from '@/components/watchly/QuickViewLink';
+import { EmptyResults, FavCard, Menu, NameDialog, favKey, favRating, favYear, menuItem, type Fav, type FavView } from './favoritesParts';
 
 // Shelf pieces of the /favorites page. Shelves are many-per-favorite;
 // state + persistence live in useShelves.
@@ -447,154 +443,6 @@ function AddToShelves({
     </div>
   );
 }
-
-
-/**
- * A shelf as a rail (the "wide shelf" view): spine label + count on the
- * left, posters across. Posters drag onto other rails / spines; hover one to
- * take it off this shelf. `onOpen` makes the spine label open the shelf.
- */
-export function ShelfRail({
-  label,
-  note,
-  items,
-  folder,
-  d,
-  f,
-  color,
-  onOpen,
-  dropping,
-  dropProps,
-  enterIndex,
-}: {
-  label: string;
-  note?: string;
-  items: Fav[];
-  folder?: Folder;
-  d?: ShelfDialogs;
-  f?: FoldersApi;
-  /** Spine colour (accent palette hex); white text on it. */
-  color?: string | null;
-  onOpen?: () => void;
-  dropping?: boolean;
-  dropProps?: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragLeave' | 'onDrop'>;
-  /**
-   * Set to cascade in on mount (used when switching to the wide view): the
-   * rail fades up, staggered by this index, and its posters fan out from the
-   * spine left → right. Omit for no entrance.
-   */
-  enterIndex?: number;
-}) {
-  const animate = enterIndex !== undefined;
-  const railDelay = (enterIndex ?? 0) * RAIL_STAGGER_MS;
-  // Delays apply only during the entrance; after that, hover/drop feedback is instant.
-  const { entered, settled } = useEntered(railDelay + 120 + Math.min(items.length, 12) * POSTER_STAGGER_MS + 500);
-  const delay = (ms: number) => (entered && !settled ? ms + "ms" : "0ms");
-  const spineClass = cn(
-    'flex w-10 shrink-0 flex-col items-center justify-between rounded-sm py-2',
-    color ? 'text-white' : 'bg-secondary text-foreground',
-    onOpen && 'hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-  );
-  const spineInner = (
-    <>
-      <span className="type-display max-h-[160px] truncate text-base [writing-mode:vertical-rl] rotate-180">{label}</span>
-      <span className={cn('font-mono text-[10px] tabular-nums', color ? 'text-white/80' : 'text-muted-foreground')}>{items.length}</span>
-    </>
-  );
-
-  return (
-    <section
-      aria-label={label}
-      {...dropProps}
-      className={cn(
-        'flex gap-4 rounded-md border p-3 transition-[color,background-color,border-color,opacity,transform] duration-300 ease-out motion-reduce:transition-none',
-        dropping ? 'border-primary bg-primary-soft' : 'border-transparent',
-      )}
-      style={
-        animate
-          ? { opacity: entered ? 1 : 0, transform: entered ? 'none' : 'translateY(8px)', transitionDelay: delay(railDelay) }
-          : undefined
-      }
-    >
-      {onOpen ? (
-        <button type="button" onClick={onOpen} title={`Open ${label}`} className={spineClass} style={color ? { background: color } : undefined}>
-          {spineInner}
-        </button>
-      ) : (
-        <div className={spineClass} style={color ? { background: color } : undefined}>
-          {spineInner}
-        </div>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2">
-          {note && <span className="text-xs text-muted-foreground">{note}</span>}
-          {folder && f && <ShelfVisibilityToggle folder={folder} f={f} />}
-          {folder && d && f && <ShelfHeadingMenu folder={folder} d={d} f={f} />}
-        </div>
-        {items.length === 0 ? (
-          <EmptyResults>{f ? 'Drop posters here, or shelve them from a card’s ⋯ menu.' : 'Nothing on this shelf yet.'}</EmptyResults>
-        ) : (
-          <ArrowStrip label={`${label} shelf`}>
-          <ul className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-            {items.map((fav, i) => {
-              const img = buildImageUrl(favImage(fav), 'w185');
-              const key = favKey(fav);
-              // Cascade: every poster starts stacked at the spine (shifted
-              // back by i slots) and slides to its place, a beat apart.
-              const cascade: React.CSSProperties | undefined = animate
-                ? {
-                    transform: entered ? 'none' : `translateX(calc(${-i} * (${POSTER_SLOT})))`,
-                    opacity: entered ? 1 : 0,
-                    transitionDelay: delay(railDelay + 120 + Math.min(i, 12) * POSTER_STAGGER_MS),
-                  }
-                : undefined;
-              const href =
-                fav.type === 'artist'
-                  ? `/artist/${fav.favoriteId}`
-                  : fav.type === 'collection'
-                    ? `/collection/${fav.favoriteId}`
-                    : `/title/${fav.type}/${fav.favoriteId}`;
-              return (
-                <li
-                  key={key}
-                  draggable={!!f}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(DRAG_TYPE, key);
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  className="group relative w-24 shrink-0 transition-[opacity,transform] duration-500 ease-out motion-reduce:transition-none"
-                  style={cascade}
-                >
-                  <QuickViewLink href={href} className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={favName(fav)}>
-                    <span className="relative block aspect-2/3 overflow-hidden rounded-sm border border-border bg-card">
-                      {img && <Image src={img} alt={favName(fav)} fill sizes="96px" className="object-cover" />}
-                    </span>
-                  </QuickViewLink>
-                  {folder && f && (
-                    <button
-                      type="button"
-                      onClick={() => f.removeFromFolder(key, folder.id)}
-                      aria-label={`Take ${favName(fav)} off ${folder.name}`}
-                      className="absolute right-1 top-1 hidden rounded-sm bg-background/90 px-1.5 py-0.5 text-[10px] text-foreground group-hover:block group-focus-within:block"
-                    >
-                      Take off
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          </ArrowStrip>
-        )}
-      </div>
-    </section>
-  );
-}
-
-const RAIL_STAGGER_MS = 70;
-const POSTER_STAGGER_MS = 30;
-// One poster slot in a rail: w-24 + gap-3.
-const POSTER_SLOT = '6rem + 0.75rem';
 
 /**
  * One-off entrance on mount. `entered` is false on the first paint and true

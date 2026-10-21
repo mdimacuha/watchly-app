@@ -46,7 +46,7 @@ export async function recordSwipeAction(
   //   /for-you — the swiped title now lives in the excludeSet so the
   //              feed should drop it on next view.
   //   /me — favoritesCount/watchedCount may change when action=saved.
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   if (parsed.data.action === 'saved') {
     revalidatePath('/me');
     revalidatePath('/favorites');
@@ -85,7 +85,7 @@ export async function undoSwipeAction(
       : undefined,
   );
 
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   revalidatePath('/swipe');
   if (reverseFavorite) {
     revalidatePath('/me');
@@ -139,6 +139,6 @@ export async function resetSwipeHistoryAction(): Promise<{ deleted: number }> {
   const userId = await requireUserId();
   const deleted = await resetSwipeHistory(userId);
   revalidatePath('/swipe');
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   return { deleted };
 }

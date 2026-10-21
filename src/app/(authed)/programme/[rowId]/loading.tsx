@@ -1,8 +1,8 @@
 import { PosterGridSkeleton, SkeletonBox } from '@/components/watchly/skeletons';
 
 /**
- * Route-level loading UI for the For You "View All" pages
- * (/for-you/[rowId]). The page resolves the whole feed server-side, so this
+ * Route-level loading UI for the Programme "View All" pages
+ * (/programme/[rowId]). The page resolves the whole feed server-side, so this
  * skeleton stands in for the ranked grid. Mirrors the page container
  * (max-w-6xl, gap-6), the back link, the header, and the exact grid columns
  * used by the ForYouCard grid so posters fill in with no layout shift.

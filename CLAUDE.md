@@ -8,6 +8,10 @@ Before starting a task, read `rules/index.md` — it routes you to the smallest 
 
 Conflict resolution (from `rules/index.md`): follow simplicity, follow the existing codebase, do not over-engineer.
 
+## Product design (always keep in mind)
+
+`docs/product-design.md` is the product compass: the core questions ("Where can I watch this? What should I watch tonight?"), the utility-first / social-later north star, the three checks every feature must pass, and the metrics table. Read it before scoping, designing, or prioritizing a feature, and include it in agent-discuss briefs (product analyst and product engineer measure against its table).
+
 ## Changelog before every commit
 
 Every commit ships with public release notes: run the `changelog` skill (`.claude/skills/changelog/SKILL.md`) before handing over commit commands. Releases are `changelogs/YYYY-MM-DD.md`, rendered at `/changelogs`. The newest release's `## Promotional` section drives the sidebar announcement card.

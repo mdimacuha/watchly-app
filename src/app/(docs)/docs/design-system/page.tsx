@@ -8,6 +8,15 @@ import { RadiusCard } from "@/components/design-system/RadiusCard";
 import { SpacingBar } from "@/components/design-system/SpacingBar";
 import { ElevationCard } from "@/components/design-system/ElevationCard";
 import { Separator } from "@/components/ui/separator";
+import { StatusPill, type StatusPillKind } from "@/components/watchly/StatusPill";
+
+const PILLS: { kind: StatusPillKind; use: string }[] = [
+  { kind: "beta", use: "Works, still being tuned" },
+  { kind: "new", use: "Recently launched (Watchly blue)" },
+  { kind: "updated", use: "An existing page changed meaningfully" },
+  { kind: "soon", use: "Placeholder, not open yet" },
+  { kind: "experimental", use: "Beta, long label for page headers" },
+];
 
 export default function DesignSystemPage() {
   return (
@@ -191,6 +200,24 @@ export default function DesignSystemPage() {
                 Interactive / Input
               </span>
             </div>
+          </div>
+        </section>
+
+        {/* Status pills */}
+        <section className="space-y-8">
+          <h2 className="text-h2 border-b border-border pb-4">Status Pills</h2>
+          <div className="flex flex-col gap-4">
+            {PILLS.map((p) => (
+              <div key={p.kind} className="flex items-center gap-6">
+                <div className="flex w-56 items-center gap-3">
+                  <StatusPill kind={p.kind} size="sm" />
+                  <StatusPill kind={p.kind} />
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  <code>{p.kind}</code> &middot; {p.use}
+                </span>
+              </div>
+            ))}
           </div>
         </section>
       </div>

@@ -6,7 +6,7 @@ import { WatchedTickets, type WatchedLocal } from '@/components/profile/WatchedT
 import { cn } from '@/lib/cn';
 import { getAccent } from '@/constants/accentColors';
 import { WatchlistCoverCard } from '@/components/watchlists/WatchlistCoverCard';
-import { ShelfRail } from '@/components/favorites/shelfParts';
+import { ShelfCards } from '@/components/favorites/ShelfCards';
 import { trackProfile } from '@/client/profileEvents';
 import { getProfileFavoritesAction, type ProfileShowcase } from '@/actions/profile';
 import { prefetch, useCachedLoad } from '@/client/cachedLoad';
@@ -150,14 +150,14 @@ function Favorites({ showcase, preview }: { showcase: ProfileShowcase; preview: 
   }
   if (!data) {
     return (
-      <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading favorites">
-        {[0, 1].map((i) => (
-          <div key={i} className="flex gap-4 p-3">
-            <div className="h-36 w-10 rounded-sm bg-secondary animate-pulse" />
-            <div className="flex gap-3">
-              {[0, 1, 2, 3].map((j) => (
-                <div key={j} className="aspect-2/3 w-24 rounded-sm bg-secondary animate-pulse" />
-              ))}
+      // Shaped like the shelf cards that replace it.
+      <div className="grid auto-rows-[15rem] grid-cols-2 gap-3 sm:auto-rows-[17rem] sm:gap-4 lg:grid-cols-3" aria-busy="true" aria-label="Loading favorites">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex flex-col overflow-hidden rounded-lg border border-border bg-card">
+            <div className="flex-1 bg-secondary animate-pulse" />
+            <div className="flex flex-col gap-2 p-3">
+              <div className="h-3.5 w-2/3 rounded-sm bg-secondary animate-pulse" />
+              <div className="h-3 w-1/3 rounded-sm bg-secondary animate-pulse" />
             </div>
           </div>
         ))}
@@ -170,16 +170,20 @@ function Favorites({ showcase, preview }: { showcase: ProfileShowcase; preview: 
 
   return (
     <div className="flex flex-col gap-2">
-      {data.all && data.all.length > 0 && <ShelfRail label="All favorites" items={data.all} />}
-      {data.shelves.map((shelf) => (
-        <ShelfRail
-          key={shelf.id}
-          label={shelf.name}
-          color={getAccent(shelf.color)?.primary ?? null}
-          note={owner && !shelf.isPublic ? 'Private · only you see this shelf' : undefined}
-          items={shelf.items}
-        />
-      ))}
+      {/* Same shelf cards as the Favorites page's wide view, read-only here. */}
+      <ShelfCards
+        shelves={[
+          ...(data.all && data.all.length > 0 ? [{ id: 'all', name: 'All favorites', color: null, items: data.all }] : []),
+          // Public shelves first (only the owner also sees private ones).
+          ...[...data.shelves].sort((x, y) => Number(y.isPublic) - Number(x.isPublic)).map((shelf) => ({
+            id: shelf.id,
+            name: shelf.name,
+            color: getAccent(shelf.color)?.primary ?? null,
+            items: shelf.items,
+            note: owner && !shelf.isPublic ? 'Private · only you see this shelf' : undefined,
+          })),
+        ]}
+      />
       {owner && data.shelves.some((s) => !s.isPublic) && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock className="h-3 w-3" /> Make a shelf public from its menu on your Favorites page to show it here.

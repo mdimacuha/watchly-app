@@ -58,7 +58,7 @@ export function PreferencesPicker({
         toast.success(
           next.length === 0
             ? 'Filter cleared — showing any region provider'
-            : `Filtering For You to ${next.length} service${next.length === 1 ? '' : 's'}`,
+            : `Filtering Tonight's Programme to ${next.length} service${next.length === 1 ? '' : 's'}`,
         );
         onSaved?.(next);
       } catch {

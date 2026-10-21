@@ -30,7 +30,7 @@ const COPY: Record<SwipeEmptyStateProps['reason'], { title: string; body: string
   },
   exhausted: {
     title: "You're all caught up",
-    body: "We'll surface fresh picks soon. In the meantime, favorite a few titles or explore your For You feed.",
+    body: "We'll surface fresh picks soon. In the meantime, favorite a few titles or explore Tonight's Programme.",
   },
   error: {
     title: "Couldn't load more picks",

@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "hide_likes" boolean DEFAULT true NOT NULL;

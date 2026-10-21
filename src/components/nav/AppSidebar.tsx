@@ -8,6 +8,7 @@ import { NOTIFICATIONS_READ_EVENT } from '@/client/notifications';
 import {
   Search,
   Sparkles,
+  Clapperboard,
   ArrowLeftRight,
   Bookmark,
   Heart,
@@ -17,6 +18,7 @@ import {
   PanelLeft,
   LogOut,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { Bell } from 'lucide-react';
 import Link from 'next/link';
@@ -26,7 +28,7 @@ import { useToast } from '@/hooks/useToast';
 import { SidebarNavItem } from './SidebarNavItem';
 import { SidebarAnnouncementCard } from './SidebarAnnouncementCard';
 import { useChangelogPromo } from '@/components/changelog/ChangelogPromoProvider';
-import { ExperimentalBadge } from '@/components/watchly/ExperimentalBadge';
+import { StatusPill, type StatusPillKind } from '@/components/watchly/StatusPill';
 import { RegionButton } from '@/components/region/RegionButton';
 import { IconButton } from '@/components/ui/icon-button';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -48,15 +50,16 @@ const sidebarSpring = { type: 'spring' as const, stiffness: 300, damping: 30 };
 // Navigation config
 // ---------------------------------------------------------------------------
 
-const MENU_ITEMS = [
-  { href: '/search', icon: Search, label: 'Search', experimental: false },
-  { href: '/for-you', icon: Sparkles, label: 'For You', experimental: true },
+const MENU_ITEMS: { href: string; icon: LucideIcon; label: string; pill?: StatusPillKind }[] = [
+  { href: '/search', icon: Search, label: 'Search' },
+  { href: '/for-you', icon: Sparkles, label: 'For You', pill: 'beta' },
+  { href: '/programme', icon: Clapperboard, label: "Tonight's Programme", pill: 'new' },
   // Swipe is still being tuned (recommendation weights, gesture feel) —
   // flag it as experimental so users know what they're stepping into.
-  { href: '/swipe', icon: ArrowLeftRight, label: 'Watchly Swipe', experimental: false },
-  { href: '/watchlists', icon: Bookmark, label: 'Watchlists', experimental: false },
-  { href: '/favorites', icon: Heart, label: 'Favorites', experimental: false },
-] as const;
+  { href: '/swipe', icon: ArrowLeftRight, label: 'Watchly Swipe' },
+  { href: '/watchlists', icon: Bookmark, label: 'Watchlists' },
+  { href: '/favorites', icon: Heart, label: 'Favorites' },
+];
 
 // ---------------------------------------------------------------------------
 // Component
@@ -322,9 +325,7 @@ export function AppSidebar({
               collapsed={collapsed}
               onClick={handleMobileNav}
               badge={
-                item.experimental ? (
-                  <ExperimentalBadge size="sm" label="Beta" />
-                ) : undefined
+                item.pill ? <StatusPill kind={item.pill} size="sm" /> : undefined
               }
             />
           ))}

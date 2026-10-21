@@ -55,6 +55,7 @@ export async function exportMyData(userId: string) {
         watchlistsVisibility: userPreferences.watchlistsVisibility,
         hideFavorites: userPreferences.hideFavorites,
         hideWatched: userPreferences.hideWatched,
+        hideLikes: userPreferences.hideLikes,
         theme: userPreferences.theme,
         notificationSettings: userPreferences.notificationSettings,
       })

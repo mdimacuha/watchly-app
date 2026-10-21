@@ -33,6 +33,41 @@ export interface Credit {
   genre: string;
 }
 
+// The order roles read in when one person holds several on a title
+// ("Director, Writer, Producer"). Unlisted jobs follow, in TMDB's order.
+const JOB_ORDER = [
+  "Director", "Creator", "Screenplay", "Writer", "Story", "Novel", "Characters",
+  "Producer", "Executive Producer", "Director of Photography", "Editor", "Original Music Composer",
+];
+const jobRank = (job: string | undefined) => {
+  const i = JOB_ORDER.indexOf(job ?? "");
+  return i === -1 ? JOB_ORDER.length : i;
+};
+
+/**
+ * One card per title: TMDB lists a credit per role, so a director who also
+ * wrote and produced would show the same poster three times. Roles (crew) or
+ * characters (cast) are joined onto the title's first credit.
+ */
+function mergeCredits(list: Credit[]): Credit[] {
+  const byTitle = new Map<string, Credit[]>();
+  for (const c of list) {
+    const key = `${c.mediaType}:${c.id}`;
+    byTitle.set(key, [...(byTitle.get(key) ?? []), c]);
+  }
+  const unique = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => Boolean(x)))];
+  return [...byTitle.values()].map((group) => {
+    if (group.length === 1) return group[0];
+    const jobs = unique([...group].sort((a, b) => jobRank(a.job) - jobRank(b.job)).map((c) => c.job));
+    const characters = unique(group.map((c) => c.character));
+    return {
+      ...group[0],
+      job: jobs.length ? jobs.join(", ") : group[0].job,
+      character: characters.length ? characters.join(" / ") : group[0].character,
+    };
+  });
+}
+
 export interface PersonPagePayload {
   details: PersonDetails;
   credits: {
@@ -155,7 +190,7 @@ export async function getPersonPagePayload(id: string): Promise<PersonPagePayloa
       knownForDepartment: details.known_for_department,
     },
     credits: {
-      cast: credits.cast.map((c) => ({
+      cast: mergeCredits(credits.cast.map((c) => ({
         id: c.id,
         creditId: c.credit_id,
         title: c.title || c.name || "Unknown Title",
@@ -166,8 +201,8 @@ export async function getPersonPagePayload(id: string): Promise<PersonPagePayloa
         voteAverage: c.vote_average,
         genreIds: c.genre_ids ?? [],
         genre: (c.genre_ids?.length ?? 0) > 0 ? getGenreName(c.genre_ids[0]) : "Unknown",
-      })),
-      crew: credits.crew.map((c) => ({
+      }))),
+      crew: mergeCredits(credits.crew.map((c) => ({
         id: c.id,
         creditId: c.credit_id,
         title: c.title || c.name || "Unknown Title",
@@ -179,7 +214,7 @@ export async function getPersonPagePayload(id: string): Promise<PersonPagePayloa
         voteAverage: c.vote_average,
         genreIds: c.genre_ids ?? [],
         genre: (c.genre_ids?.length ?? 0) > 0 ? getGenreName(c.genre_ids[0]) : "Unknown",
-      })),
+      }))),
     },
   };
 }

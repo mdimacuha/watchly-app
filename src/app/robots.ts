@@ -38,6 +38,7 @@ const DISALLOW_FROM_SEARCH = [
   '/settings',
   '/onboarding',
   '/for-you',
+  '/programme',
   '/favorites',
   '/activity',
   '/notifications',

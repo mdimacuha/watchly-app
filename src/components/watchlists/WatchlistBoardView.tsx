@@ -79,6 +79,9 @@ export function WatchlistBoardView({
 
   // Track the active drag's id so we can render an overlay preview.
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Columns are a share of the board, not a fixed width, so the drag preview
+  // takes the grabbed card's measured width to stay under the cursor.
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
   const activeItem = activeId
     ? items.find((i) => i.id === activeId) ?? null
     : null;
@@ -97,10 +100,9 @@ export function WatchlistBoardView({
   const dragOverlay = (
     <DragOverlay>
       {activeItem ? (
-        // Width matches the actual card render width: column is w-[240px]
-        // with p-2 (8px each side) → cards are 224px. Mismatch here pushes
-        // the overlay off-cursor.
-        <div className="w-[224px] opacity-90 cursor-grabbing">
+        // Same width as the card that was grabbed; a mismatch pushes the
+        // overlay off-cursor.
+        <div className="opacity-90 cursor-grabbing" style={{ width: dragWidth ?? undefined }}>
           <WatchlistBoardCard item={activeItem} isOwner={false} />
         </div>
       ) : null}
@@ -160,11 +162,17 @@ export function WatchlistBoardView({
 
   return (
     <ArrowStrip label="status columns">
-    <div className="overflow-x-auto scrollbar-thin pb-3 -mx-4 px-4">
+    {/* Snaps to whole columns: 4 visible on desktop, 2 on tablets, one (with
+        a peek) on phones; a scroll moves by one column or more. Snapping is
+        off mid-drag so dnd-kit's auto-scroll can carry a card across. */}
+    <div className={cn('overflow-x-auto overscroll-x-contain scrollbar-thin pb-3', activeId === null && 'snap-x snap-mandatory')}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
-        onDragStart={(e) => setActiveId(String(e.active.id))}
+        onDragStart={(e) => {
+          setActiveId(String(e.active.id));
+          setDragWidth(e.active.rect.current.initial?.width ?? null);
+        }}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
@@ -182,7 +190,7 @@ export function WatchlistBoardView({
             : STATUS_ORDER.filter((s) => columns[s].length > 0);
 
           return (
-            <div className="flex gap-3 min-w-max">
+            <div className="flex gap-3">
               {visibleStatuses.map((status) => (
                 <BoardColumn
                   key={status}
@@ -227,7 +235,7 @@ function BoardColumn({ status, items, isOwner, dimmed }: BoardColumnProps) {
   return (
     <div
       className={cn(
-        'flex flex-col w-[240px] shrink-0 transition-opacity',
+        'flex w-[85%] shrink-0 snap-start flex-col transition-opacity sm:w-[calc((100%-0.75rem)/2)] lg:w-[calc((100%-2.25rem)/4)]',
         // Full opacity when hovered (so the drop target highlights even when
         // it was dimmed) — otherwise muted while a drag is going through.
         dimmed && !isOver && 'opacity-40',

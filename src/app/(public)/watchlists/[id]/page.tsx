@@ -60,7 +60,7 @@ export default async function WatchlistDetailPage({ params }: PageProps) {
   return (
     <AccentScope
       accentColor={normalizeAccentColor(owner.accentColor)}
-      className="px-8 py-10"
+      className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full"
     >
       <WatchlistDetailClient
         watchlist={watchlist}

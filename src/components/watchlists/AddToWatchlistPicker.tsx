@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Plus, Check, Bookmark } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
@@ -53,6 +53,13 @@ export function AddToWatchlistPicker({
   const [newName, setNewName] = useState('');
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  // Latest callback without making it a load trigger: callers often pass an
+  // inline function, and reloading on every new one loops (the callback
+  // updates the caller, which re-renders with a new callback).
+  const membershipRef = useRef(onMembershipChange);
+  useEffect(() => {
+    membershipRef.current = onMembershipChange;
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -73,12 +80,12 @@ export function AddToWatchlistPicker({
       setLists(data);
       // Sync the trigger button to the true membership at open time (handles
       // the title having been added/removed elsewhere since the page loaded).
-      onMembershipChange?.(data.some((l) => l.containsItem));
+      membershipRef.current?.(data.some((l) => l.containsItem));
     });
     return () => {
       cancelled = true;
     };
-  }, [isOpen, mediaType, mediaId, onMembershipChange]);
+  }, [isOpen, mediaType, mediaId]);
 
   // Toggle a non-contained list in/out of the local selection. Local only —
   // the server is not touched until the user confirms.

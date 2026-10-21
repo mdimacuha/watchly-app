@@ -20,6 +20,7 @@ export const updatePrivacySchema = z.object({
   watchlistsVisibility: z.enum(['public', 'followers_only', 'private']).optional(),
   hideFavorites: z.boolean().optional(),
   hideWatched: z.boolean().optional(),
+  hideLikes: z.boolean().optional(),
 });
 
 export type UpdatePrivacyInput = z.infer<typeof updatePrivacySchema>;
@@ -36,6 +37,8 @@ export async function getPrivacySettings(userId: string) {
     // sharing. The settings UI flips this via a "Show watched on my
     // profile" toggle, which is the inverse of this stored value.
     hideWatched: row?.hideWatched ?? true,
+    // Same default as watched: likes stay off the profile until switched on.
+    hideLikes: row?.hideLikes ?? true,
   };
 }
 
@@ -59,6 +62,9 @@ export async function updatePrivacy(userId: string, input: UpdatePrivacyInput) {
         : {}),
       ...(parsed.data.hideWatched !== undefined
         ? { hideWatched: parsed.data.hideWatched }
+        : {}),
+      ...(parsed.data.hideLikes !== undefined
+        ? { hideLikes: parsed.data.hideLikes }
         : {}),
       updatedAt: new Date(),
     })

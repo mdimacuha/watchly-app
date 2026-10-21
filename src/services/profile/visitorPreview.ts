@@ -1,6 +1,6 @@
-import { and, count, eq, isNotNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
-import { favoriteShelves, userReviews, watchlists } from '@/db/schema';
+import { favoriteShelves, titleSwipes, userReviews, watchlists } from '@/db/schema';
 import { getUserPreferencesRow } from '@/services/users/rows';
 import { getProfileWithStats, visibilityPrefsOf } from './index';
 import { resolveProfileVisibility, type PrivacyLevel, type ViewerRole } from './visibility';
@@ -12,7 +12,7 @@ import { resolveProfileVisibility, type PrivacyLevel, type ViewerRole } from './
 export type PreviewRole = Extract<ViewerRole, 'stranger' | 'follower'>;
 
 export interface PreviewArea {
-  key: 'watchlists' | 'favorites' | 'shelves' | 'watched' | 'reviews';
+  key: 'watchlists' | 'favorites' | 'shelves' | 'watched' | 'reviews' | 'likes';
   label: string;
   visible: boolean;
   /** How many items this visitor sees in the area. */
@@ -48,7 +48,7 @@ export interface VisitorPreview {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export async function getVisitorPreview(ownerId: string): Promise<VisitorPreview> {
-  const [profile, prefsRow, listRows, shelfRows, [{ reviews }]] = await Promise.all([
+  const [profile, prefsRow, listRows, shelfRows, [{ reviews }], [{ likes }]] = await Promise.all([
     getProfileWithStats(ownerId),
     getUserPreferencesRow(ownerId),
     db.select({ isPublic: watchlists.isPublic }).from(watchlists).where(eq(watchlists.userId, ownerId)),
@@ -60,6 +60,10 @@ export async function getVisitorPreview(ownerId: string): Promise<VisitorPreview
       .select({ reviews: count() })
       .from(userReviews)
       .where(and(eq(userReviews.userId, ownerId), isNotNull(userReviews.body))),
+    db
+      .select({ likes: count() })
+      .from(titleSwipes)
+      .where(and(eq(titleSwipes.userId, ownerId), inArray(titleSwipes.action, ['liked', 'saved']))),
   ]);
   const prefs = visibilityPrefsOf(prefsRow);
   const publicLists = listRows.filter((l) => l.isPublic).length;
@@ -79,6 +83,7 @@ export async function getVisitorPreview(ownerId: string): Promise<VisitorPreview
       },
       { key: 'watched', label: 'Watched', visible: v.watched, count: v.watched ? profile.stats.watchedCount : 0 },
       { key: 'reviews', label: 'Reviews', visible: v.profile, count: v.profile ? reviews : 0 },
+      { key: 'likes', label: 'Likes', visible: v.likes, count: v.likes ? likes : 0 },
     ];
 
     const notes: PreviewNote[] = [];

@@ -17,7 +17,7 @@ export default async function WatchlistsPage() {
   ]);
 
   return (
-    <AccentScope accentColor={accentColor} className="px-4 sm:px-8 py-10">
+    <AccentScope accentColor={accentColor} className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full">
       <WatchlistsPageClient watchlists={watchlists} />
     </AccentScope>
   );

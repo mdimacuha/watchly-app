@@ -61,6 +61,7 @@ export const authenticatedRoutes: string[] = [
   '/home',
   '/feed',
   '/for-you',
+  '/programme',
   '/favorites',
   '/me',
   '/activity',

@@ -37,11 +37,11 @@ export default async function ForYouRowPage({ params }: PageProps) {
 
   // Server-render the first page; ViewAllClient appends the rest on demand.
   const firstPage = await getForYouRowAction({ rowId: targetId, page: 1 });
-  const title = ROW_TITLES[targetId] ?? 'For You';
+  const title = ROW_TITLES[targetId] ?? "Tonight's Programme";
 
   return (
     <div className="px-8 py-10 max-w-6xl mx-auto w-full flex flex-col gap-6">
-      <BackLink fallbackHref="/for-you" label="Back to For You" />
+      <BackLink fallbackHref="/programme" label="Back to Tonight's Programme" />
 
       <header className="flex flex-col gap-1">
         <h1 className="text-h2">{title}</h1>

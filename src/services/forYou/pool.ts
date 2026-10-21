@@ -96,7 +96,18 @@ export const getForYouPool = cache(async (userId: string, region: string): Promi
     revalidate: POOL_REVALIDATE_SECONDS,
     tags: [forYouTag(userId)],
   });
-  return cached(userId, region);
+  // Swipes only mark the pool stale (see `staleForYouPool`), so it may
+  // predate the latest ones: drop decided titles with one cheap DB read.
+  const { getSwipeKeySet, DECIDED_SWIPE_ACTIONS } = await import('@/services/swipe');
+  const [pool, swiped] = await Promise.all([
+    cached(userId, region),
+    getSwipeKeySet(userId, DECIDED_SWIPE_ACTIONS),
+  ]);
+  return {
+    ...pool,
+    picks: pool.picks.filter((p) => !swiped.has(p.key)),
+    wildcards: pool.wildcards.filter((p) => !swiped.has(p.key)),
+  };
 });
 
 async function buildForYouPool(userId: string, region: string): Promise<ForYouPool> {
@@ -109,8 +120,10 @@ async function buildForYouPool(userId: string, region: string): Promise<ForYouPo
   ]);
   const providerFilter = selectedProviders ? new Set<number>(selectedProviders) : null;
 
-  // Continue list is the user's own intent — load it alongside candidates.
+  // Continue list is the user's own intent — load it alongside candidates,
+  // and the trending list for wildcards too (filtered once picks are known).
   const continuePromise = loadContinue(userId, region);
+  const trendingWeek = trending.all('week', { region }).catch(() => ({ results: [] }));
 
   const tally = seeds.length > 0 ? await gatherCandidates(seeds, excludeSet) : [];
   const scoring = tally.slice(0, SCORING_POOL);
@@ -155,7 +168,7 @@ async function buildForYouPool(userId: string, region: string): Promise<ForYouPo
 
   const continueItems = await continuePromise;
   for (const c of continueItems) used.add(c.key);
-  const wildcards = await loadWildcards(region, excludeSet, used);
+  const wildcards = loadWildcards(await trendingWeek, excludeSet, used);
 
   return { picks, wildcards, continueItems, hasTaste: seeds.length > 0 };
 }
@@ -204,12 +217,11 @@ async function loadContinue(userId: string, region: string): Promise<ContinueIte
  * Trending titles the user hasn't seen or been shown — cheap (one list call,
  * no per-title enrich), for a "wildcard" slot outside their usual taste.
  */
-async function loadWildcards(
-  region: string,
+function loadWildcards(
+  raw: { results: Awaited<ReturnType<typeof trending.all>>['results'] },
   excludeSet: Set<string>,
   used: Set<string>,
-): Promise<PoolPick[]> {
-  const raw = await trending.all('week', { region }).catch(() => ({ results: [] }));
+): PoolPick[] {
   const out: PoolPick[] = [];
   for (const r of raw.results) {
     if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue;

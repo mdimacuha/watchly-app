@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { SettingsSnapshot } from '@/services/settings/snapshot';
@@ -14,7 +14,7 @@ import { BlockedList, Kicker, PrivacyControls, SECTIONS, SectionBody, VisitorCar
 
 export function SettingsPage({ snapshot }: { snapshot: SettingsSnapshot }) {
   const s = useSettings(snapshot);
-  const current = useSectionInView();
+  const [current, pickSection] = useSectionInView();
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-8">
@@ -35,6 +35,7 @@ export function SettingsPage({ snapshot }: { snapshot: SettingsSnapshot }) {
               <li key={x.id} className="shrink-0">
                 <a
                   href={`#settings-${x.id}`}
+                  onClick={() => pickSection(x.id)}
                   aria-current={current === x.id ? 'true' : undefined}
                   className={cn(
                     'flex items-baseline gap-2 rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors lg:whitespace-normal',
@@ -88,19 +89,52 @@ function PrivacySection({ s }: { s: SettingsState }) {
 }
 
 /** The section nearest the top of the viewport, for the index highlight. */
-function useSectionInView(): SectionId {
+/**
+ * The section being read: the last one whose top has passed a line 20% down
+ * the screen. Short sections at the end can never scroll that high, so over
+ * the last screen of scrolling the line slides down to the bottom edge and
+ * each of them still gets its turn. A clicked index item stays current until
+ * the reader scrolls themselves (the jump may stop short of its section).
+ */
+function useSectionInView(): [SectionId, (id: SectionId) => void] {
   const [current, setCurrent] = useState<SectionId>('privacy');
+  const picked = useRef<SectionId | null>(null);
+
   useEffect(() => {
     const els = SECTIONS.map((x) => document.getElementById(`settings-${x.id}`)).filter((e): e is HTMLElement => !!e);
-    const io = new IntersectionObserver(
-      (entries) => {
-        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (top) setCurrent(top.target.id.replace('settings-', '') as SectionId);
-      },
-      { rootMargin: '-20% 0px -70% 0px' },
-    );
-    els.forEach((e) => io.observe(e));
-    return () => io.disconnect();
+    const update = () => {
+      if (picked.current || els.length === 0) return;
+      const doc = document.documentElement;
+      const vh = window.innerHeight;
+      const remaining = doc.scrollHeight - window.scrollY - vh;
+      const nearEnd = Math.min(1, Math.max(0, 1 - remaining / vh));
+      const line = vh * (0.2 + 0.8 * nearEnd);
+      let id = els[0].id;
+      for (const e of els) if (e.getBoundingClientRect().top <= line) id = e.id;
+      setCurrent(id.replace('settings-', '') as SectionId);
+    };
+    // Only the reader's own scrolling releases a picked item.
+    const release = () => {
+      picked.current = null;
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    window.addEventListener('wheel', release, { passive: true });
+    window.addEventListener('touchstart', release, { passive: true });
+    window.addEventListener('keydown', release);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('wheel', release);
+      window.removeEventListener('touchstart', release);
+      window.removeEventListener('keydown', release);
+    };
   }, []);
-  return current;
+
+  const pick = (id: SectionId) => {
+    picked.current = id;
+    setCurrent(id);
+  };
+  return [current, pick];
 }

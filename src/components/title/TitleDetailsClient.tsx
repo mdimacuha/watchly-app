@@ -28,7 +28,7 @@ export function TitleDetailsClient({ titleData }: TitleDetailsClientProps) {
     <div className="relative flex flex-col min-h-screen">
       {/* Floating over the hero rather than sitting in a plain strip above it. */}
       <BackLink
-        fallbackHref="/for-you"
+        fallbackHref="/programme"
         className="absolute top-4 left-4 md:top-6 md:left-6 z-30 rounded-full bg-background/70 hover:bg-background/90 backdrop-blur-sm border border-border/60 px-3 py-1.5 shadow-sm"
       />
 

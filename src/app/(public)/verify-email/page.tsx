@@ -41,8 +41,8 @@ export default async function VerifyEmailPage({ searchParams }: PageProps) {
             <p className="text-muted-foreground text-sm max-w-sm">
               You&apos;re all set. Your Watchly account is now fully active.
             </p>
-            <Link href="/for-you" className="mt-2">
-              <Button className="gap-2">Open For You</Button>
+            <Link href="/programme" className="mt-2">
+              <Button className="gap-2">Open Tonight&apos;s Programme</Button>
             </Link>
           </>
         ) : state === 'missing' ? (

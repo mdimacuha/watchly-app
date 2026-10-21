@@ -13,6 +13,7 @@ export interface VisibilityPrefs {
   watchlistsVisibility: PrivacyLevel;
   hideFavorites: boolean;
   hideWatched: boolean;
+  hideLikes: boolean;
 }
 
 export interface ProfileVisibility {
@@ -25,6 +26,8 @@ export interface ProfileVisibility {
   /** Public shelves show (even when favorites are hidden). */
   publicShelves: boolean;
   watched: boolean;
+  /** Likes from Watchly Swipe and the For You reel. */
+  likes: boolean;
 }
 
 /** Defaults for a missing preferences row (matches the column defaults). */
@@ -33,6 +36,7 @@ export const DEFAULT_VISIBILITY_PREFS: VisibilityPrefs = {
   watchlistsVisibility: 'public',
   hideFavorites: false,
   hideWatched: true,
+  hideLikes: true,
 };
 
 const opens = (level: PrivacyLevel, role: ViewerRole) =>
@@ -40,11 +44,11 @@ const opens = (level: PrivacyLevel, role: ViewerRole) =>
 
 export function resolveProfileVisibility(prefs: VisibilityPrefs, role: ViewerRole): ProfileVisibility {
   if (role === 'owner') {
-    return { profile: true, watchlists: true, favorites: true, publicShelves: true, watched: true };
+    return { profile: true, watchlists: true, favorites: true, publicShelves: true, watched: true, likes: true };
   }
   // Private is closed to followers too; followers-only opens to accepted followers.
   if (!opens(prefs.profileVisibility, role)) {
-    return { profile: false, watchlists: false, favorites: false, publicShelves: false, watched: false };
+    return { profile: false, watchlists: false, favorites: false, publicShelves: false, watched: false, likes: false };
   }
   return {
     profile: true,
@@ -52,5 +56,6 @@ export function resolveProfileVisibility(prefs: VisibilityPrefs, role: ViewerRol
     favorites: !prefs.hideFavorites,
     publicShelves: true,
     watched: !prefs.hideWatched,
+    likes: !prefs.hideLikes,
   };
 }

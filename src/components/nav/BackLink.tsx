@@ -21,7 +21,7 @@ interface BackLinkProps {
  * fallback route so the user is never trapped.
  */
 export function BackLink({
-  fallbackHref = '/for-you',
+  fallbackHref = '/programme',
   label = 'Back',
   className,
 }: BackLinkProps) {

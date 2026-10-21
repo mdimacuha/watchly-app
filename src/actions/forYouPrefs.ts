@@ -32,7 +32,7 @@ export async function updateForYouPreferencesAction(
   const saved = await updateSelectedProviders(session.userId, next);
   // For You reads selectedProviders directly inside the orchestrator; a
   // revalidate forces the rows to re-filter on next view.
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   revalidatePath('/settings');
   return saved;
 }

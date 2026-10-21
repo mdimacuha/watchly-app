@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
-const FALLBACK = '/for-you';
+const FALLBACK = '/programme';
 
 export function BackButton() {
   const router = useRouter();

@@ -15,6 +15,7 @@ import {
 import { markAsWatched } from '@/services/watched';
 import { revalidatePath } from 'next/cache';
 import { getForYouPool, type ForYouPool } from '@/services/forYou/pool';
+import { getReelPage, type ReelItem } from '@/services/forYou/reel';
 
 async function resolveRegion(userId: string): Promise<string> {
   // Same priority as the rest of the app: cookie → DB pref → 'US'.
@@ -84,7 +85,7 @@ export async function markAsWatchedAction(
     mediaType,
     String(tmdbId),
   );
-  revalidatePath('/for-you');
+  revalidatePath('/programme');
   return where;
 }
 
@@ -97,4 +98,11 @@ export async function getForYouPoolAction(): Promise<ForYouPool> {
   if (!session) throw new UnauthorizedAppError();
   const region = await resolveRegion(session.userId);
   return getForYouPool(session.userId, region);
+}
+
+/** One page of the For You reel; input is validated in the service. */
+export async function getReelPageAction(input: unknown = {}): Promise<{ items: ReelItem[] }> {
+  const session = await getSession();
+  if (!session) throw new UnauthorizedAppError();
+  return getReelPage(session.userId, input);
 }

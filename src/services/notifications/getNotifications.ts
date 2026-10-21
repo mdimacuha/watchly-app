@@ -302,6 +302,7 @@ async function loadContext(userId: string, rows: RawRow[]): Promise<Context> {
             watchlistsVisibility: userPreferences.watchlistsVisibility,
             hideFavorites: userPreferences.hideFavorites,
             hideWatched: userPreferences.hideWatched,
+            hideLikes: userPreferences.hideLikes,
           })
           .from(userFollows)
           .leftJoin(userPreferences, eq(userPreferences.userId, userFollows.followingId))
@@ -338,6 +339,7 @@ async function loadContext(userId: string, rows: RawRow[]): Promise<Context> {
             watchlistsVisibility: f.watchlistsVisibility ?? DEFAULT_VISIBILITY_PREFS.watchlistsVisibility,
             hideFavorites: f.hideFavorites ?? DEFAULT_VISIBILITY_PREFS.hideFavorites,
             hideWatched: f.hideWatched ?? DEFAULT_VISIBILITY_PREFS.hideWatched,
+            hideLikes: f.hideLikes ?? DEFAULT_VISIBILITY_PREFS.hideLikes,
           },
           'follower',
         ),

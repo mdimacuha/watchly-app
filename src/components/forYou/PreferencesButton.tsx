@@ -9,7 +9,7 @@ import { PreferencesPicker } from './PreferencesPicker';
 import type { CatalogProvider } from '@/server/tmdb/providersCatalog';
 
 /**
- * Top-right button on /for-you. Lazy-loads the catalog only when opened
+ * Top-right button on /programme. Lazy-loads the catalog only when opened
  * so first-paint of For You stays fast.
  */
 export function PreferencesButton() {
@@ -47,7 +47,7 @@ export function PreferencesButton() {
       <Modal isOpen={open} onClose={() => setOpen(false)} className="max-w-lg">
         <div className="flex flex-col gap-4 p-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold">For You preferences</h2>
+            <h2 className="text-lg font-semibold">Programme preferences</h2>
             <p className="text-xs text-muted-foreground">
               Pick the streaming services to filter rows to.
             </p>

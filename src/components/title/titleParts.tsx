@@ -168,9 +168,16 @@ export const OUTLINE_BTN =
 const STACK_BTN =
   'w-full h-11 justify-start gap-2.5 px-4 border border-border bg-transparent text-foreground hover:bg-secondary/60';
 
+// A row inside the joined "your lists" group: the group draws the border.
+const GROUP_BTN =
+  'w-full h-11 justify-start gap-2.5 px-4 rounded-none border-0 bg-transparent text-foreground hover:bg-secondary/60';
+
 /**
  * Banani-style action column: Trailer as the one filled button, the rest
- * outlined and left-aligned. Two-up grid on mobile, single column from md.
+ * outlined and left-aligned. Watchlist, Favorite and Seen it all log the
+ * title to your lists, so they sit together as one joined group. Phones:
+ * Trailer and Share side by side, the group full width below. From md: one
+ * column, Trailer → group → Share.
  * FavoriteButton ignores className, so its look is set from the wrapper.
  */
 export function ActionStack({
@@ -190,15 +197,22 @@ export function ActionStack({
         </Button>
       )}
       {isAuthenticated ? (
-        <>
-          <AddToWatchlistButton
-            mediaType={mediaType}
-            mediaId={id}
-            title={details.title}
-            fetchInitial
-            className={STACK_BTN}
-          />
-          <div className="[&_button]:w-full [&_button]:h-11 [&_button]:justify-start [&_button]:gap-2.5 [&_button]:px-4 [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button:hover]:bg-secondary/60 [&_svg]:w-4 [&_svg]:h-4">
+        <div
+          role="group"
+          aria-label="Your lists"
+          className="order-2 col-span-2 flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border md:order-1 md:col-span-1"
+        >
+          {/* Wrapped so the group's divider lands on the div, not the borderless button. */}
+          <div>
+            <AddToWatchlistButton
+              mediaType={mediaType}
+              mediaId={id}
+              title={details.title}
+              fetchInitial
+              className={GROUP_BTN}
+            />
+          </div>
+          <div className="[&_button]:w-full [&_button]:h-11 [&_button]:justify-start [&_button]:gap-2.5 [&_button]:px-4 [&_button]:rounded-none [&_button]:border-0 [&_button]:bg-transparent [&_button:hover]:bg-secondary/60 [&_svg]:w-4 [&_svg]:h-4">
             <FavoriteButton key={id} id={id} type={mediaType} showText fetchInitial />
           </div>
           <SeenItButton
@@ -210,17 +224,22 @@ export function ActionStack({
             year={details.year}
             variant="stack"
             surface="title"
+            className={GROUP_BTN}
           />
-        </>
+        </div>
       ) : (
-        <Button variant="secondary" asChild className={STACK_BTN}>
+        <Button variant="secondary" asChild className={cn(STACK_BTN, 'order-2 col-span-2 md:order-1 md:col-span-1')}>
           <Link href="/signin">
             <Bookmark className="w-4 h-4" />
             Sign in to save
           </Link>
         </Button>
       )}
-      <Button variant="secondary" onClick={() => shareTitle(mediaType, id, details.title)} className={STACK_BTN}>
+      <Button
+        variant="secondary"
+        onClick={() => shareTitle(mediaType, id, details.title)}
+        className={cn(STACK_BTN, 'order-1 md:order-2', !trailer && 'col-span-2 md:col-span-1')}
+      >
         <Share2 className="w-4 h-4" />
         Share
       </Button>

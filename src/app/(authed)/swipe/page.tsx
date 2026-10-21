@@ -3,7 +3,8 @@ import { requireUser } from '@/server/auth/requireUser';
 import { getSwipeDeck } from '@/services/swipe';
 import { SwipeDeckClient } from '@/components/swipe/SwipeDeckClient';
 import { SwipeEmptyState } from '@/components/swipe/SwipeEmptyState';
-import { ExperimentalBadge } from '@/components/watchly/ExperimentalBadge';
+import { SwipeGuide } from '@/components/swipe/SwipeGuide';
+import { StatusPill } from '@/components/watchly/StatusPill';
 
 /**
  * /swipe — WatchlySwipe discovery deck. Server-renders the first page of
@@ -24,15 +25,11 @@ export default async function SwipePage() {
         <div className="flex items-center gap-3">
           <Sparkles size={22} className="text-primary" />
           <h1 className="text-h2">WatchlySwipe</h1>
-          <ExperimentalBadge />
+          <StatusPill kind="experimental" />
         </div>
-        <p className="hidden sm:block text-xs text-muted-foreground">
-          ← Pass · → Like · F Favorite · Enter Details · Z Undo
-        </p>
+        {/* Verdicts, the reel and every control, touch and keyboard. */}
+        <SwipeGuide />
       </div>
-      <p className="text-sm text-muted-foreground -mt-2 sm:hidden">
-        Swipe left to Pass · right to Like · tap ♡ to Favorite
-      </p>
 
       {initial.items.length === 0 ? (
         <SwipeEmptyState reason="empty-deck" />

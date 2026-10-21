@@ -10,7 +10,10 @@ export type ForYouEventKind =
   | 'spin'
   | 'filter_changed'
   | 'dismissed'
-  | 'committed';
+  | 'committed'
+  | 'item_viewed'
+  | 'video_unavailable'
+  | 'details_opened';
 
 const track = createEventTracker<{
   event: ForYouEventKind;

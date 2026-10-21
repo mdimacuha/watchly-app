@@ -110,10 +110,10 @@ export function SearchEndCap({ query, data }: SearchEndCapProps) {
         )}
         {taste && (
           <Link
-            href="/for-you"
+            href="/programme"
             className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
-            More in For You <ArrowRight className="h-3.5 w-3.5" />
+            More in Tonight&apos;s Programme <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         )}
       </div>

@@ -47,13 +47,14 @@ import {
 
 /** The visibility-relevant columns of a preferences row (defaults when missing). */
 export function visibilityPrefsOf(
-  row: { profileVisibility?: VisibilityPrefs['profileVisibility'] | null; watchlistsVisibility?: VisibilityPrefs['watchlistsVisibility'] | null; hideFavorites?: boolean | null; hideWatched?: boolean | null } | null | undefined,
+  row: { profileVisibility?: VisibilityPrefs['profileVisibility'] | null; watchlistsVisibility?: VisibilityPrefs['watchlistsVisibility'] | null; hideFavorites?: boolean | null; hideWatched?: boolean | null; hideLikes?: boolean | null } | null | undefined,
 ): VisibilityPrefs {
   return {
     profileVisibility: row?.profileVisibility ?? DEFAULT_VISIBILITY_PREFS.profileVisibility,
     watchlistsVisibility: row?.watchlistsVisibility ?? DEFAULT_VISIBILITY_PREFS.watchlistsVisibility,
     hideFavorites: row?.hideFavorites ?? DEFAULT_VISIBILITY_PREFS.hideFavorites,
     hideWatched: row?.hideWatched ?? DEFAULT_VISIBILITY_PREFS.hideWatched,
+    hideLikes: row?.hideLikes ?? DEFAULT_VISIBILITY_PREFS.hideLikes,
   };
 }
 
@@ -135,6 +136,8 @@ export type ProfileView = {
   /** Owner's choice to hide their watched list from the public profile.
    *  Defaults to true (watched data is more intimate than favorites). */
   hideWatched: boolean;
+  /** Owner's choice to show their likes on the profile. Defaults to hidden. */
+  hideLikes: boolean;
   stats: {
     favoritesCount: number;
     watchlistsCount: number;
@@ -295,6 +298,7 @@ export async function getProfileWithStats(userId: string): Promise<ProfileView> 
     bannerEnabled: profileRow?.bannerEnabled ?? true,
     cardFeature: readCardFeature(profileRow),
     hideWatched: prefsRow?.hideWatched ?? true,
+    hideLikes: prefsRow?.hideLikes ?? true,
     stats: {
       favoritesCount: favCount,
       watchlistsCount: listCount,
@@ -632,6 +636,8 @@ export async function getPublicProfileOverview(
   /** True when the owner has chosen to hide watched titles. Owners
    *  still see their own list — this flag controls the public surface. */
   watchedHidden: boolean;
+  /** True when this viewer may not see the owner's likes (off by default). */
+  likesHidden: boolean;
   /** Enriched watched list, empty when watchedHidden=true for non-self. */
   watchedTitles: import('@/services/watched').EnrichedWatched[];
   tasteProfile: TasteProfile;
@@ -728,6 +734,7 @@ export async function getPublicProfileOverview(
     recentFavorites,
     favoritesHidden: !visible.favorites,
     watchedHidden: !visible.watched,
+    likesHidden: !visible.likes,
     watchedTitles,
     tasteProfile,
     isSelf,
