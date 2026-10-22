@@ -85,7 +85,7 @@ Write as Watchly talking to its users:
 
 Add it when the release has one headline feature worth a nudge. It
 replaces the current sidebar card (the newest release's promo always wins;
-a release without one hides the card).
+a release without one, like a patch, keeps the previous card).
 - Title: name the feature, e.g. "Introducing Watchly Swipe" or "Rank your
   watchlists".
 - Description: one sentence on what the user gets.

@@ -28,8 +28,12 @@ export interface LatestPromo extends ChangelogPromo {
   slug: string;
 }
 
-/** The newest release's "Promotional" section, if it has one. */
+/**
+ * The newest "Promotional" section. Releases without one (patches) keep the
+ * previous release's card, under its own slug, so anyone who closed it
+ * doesn't see it again.
+ */
 export const getLatestPromo = cache(async (): Promise<LatestPromo | null> => {
-  const [latest] = await listChangelogs();
-  return latest?.promo ? { ...latest.promo, slug: latest.slug } : null;
+  const withPromo = (await listChangelogs()).find((r) => r.promo);
+  return withPromo?.promo ? { ...withPromo.promo, slug: withPromo.slug } : null;
 });

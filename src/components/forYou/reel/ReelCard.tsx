@@ -2,12 +2,13 @@
 
 // One title in the For You reel: the centred trailer with its caption bar,
 // details lower-left that open in place ("More about it"), and the action
-// stack lower-right. Nothing is ever drawn on top of the YouTube player.
+// stack lower-right. Nothing is ever drawn on top of the YouTube player, and
+// the player itself stays YouTube's: our taps and gestures live around it.
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowUpRight, Bookmark, BookmarkCheck, ChevronDown, Heart, Play, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { ArrowUpRight, Bookmark, BookmarkCheck, ChevronDown, Heart, Pause, Play, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { useRegionStore } from '@/client/stores/region';
@@ -25,6 +26,10 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).p
 /** Two taps within this window and this distance are a double tap. */
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_PX = 30;
+/** Hearts keep at least this far from the video (a heart is 80px across). */
+const HEART_CLEARANCE_PX = 48;
+/** YouTube's minimum player viewport is 200 × 200. */
+const MIN_PLAYER_PX = 200;
 
 export function ReelCard(p: ReelCardProps) {
   const { item } = p;
@@ -33,7 +38,7 @@ export function ReelCard(p: ReelCardProps) {
     if (!open) p.onDetailsOpened();
     setOpen(!open);
   };
-  const taps = useTaps(p.togglePlay, p.likeByTap);
+  const taps = useTaps(p.togglePlay, p.likeByTap, p.userPaused);
 
   return (
     <section
@@ -83,20 +88,22 @@ export function ReelCard(p: ReelCardProps) {
 // ---------------------------------------------------------------------------
 // Tap the card to pause or play; double tap to like. A single tap waits out
 // the double-tap window so a like never also pauses. Taps on controls, links
-// and the open details don't count. The heart shows where you tapped, except
-// over the playing video: nothing is drawn on top of the YouTube player, so
-// there the Like button answers alone.
+// and the open details don't count, and neither does the video: the playing
+// player is YouTube's own (a tap there is theirs). Paused, our still sits in
+// its place, and a tap on it plays. Hearts never land on or near the video.
 // ---------------------------------------------------------------------------
 
 type Burst = { id: number; x: number; y: number };
 
-function useTaps(onTap: () => void, onDoubleTap: () => void) {
+function useTaps(onTap: () => void, onDoubleTap: () => void, paused: boolean) {
   const last = useRef<{ at: number; x: number; y: number } | null>(null);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const onTapRef = useRef(onTap);
+  const pausedRef = useRef(paused);
   useEffect(() => {
     onTapRef.current = onTap;
+    pausedRef.current = paused;
   });
   useEffect(() => () => clearTimeout(pending.current ?? undefined), []);
 
@@ -104,6 +111,11 @@ function useTaps(onTap: () => void, onDoubleTap: () => void) {
     if (e.button !== 0) return;
     const t = e.target instanceof Element ? e.target : null;
     if (t?.closest('button, a, input, [data-no-double-tap]')) return;
+    if (t?.closest('[data-video]')) {
+      // Only our paused still is ever here to tap (the player swallows its own taps).
+      if (pausedRef.current) onTapRef.current();
+      return;
+    }
     const now = e.timeStamp;
     const prev = last.current;
     if (prev && now - prev.at < DOUBLE_TAP_MS && Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < DOUBLE_TAP_PX) {
@@ -113,7 +125,14 @@ function useTaps(onTap: () => void, onDoubleTap: () => void) {
       // A mouse double click also selects the word under it.
       window.getSelection()?.removeAllRanges();
       onDoubleTap();
-      if (!t?.closest('[data-video]')) {
+      const video = e.currentTarget.querySelector('[data-video]')?.getBoundingClientRect();
+      const nearVideo =
+        !!video &&
+        e.clientX > video.left - HEART_CLEARANCE_PX &&
+        e.clientX < video.right + HEART_CLEARANCE_PX &&
+        e.clientY > video.top - HEART_CLEARANCE_PX &&
+        e.clientY < video.bottom + HEART_CLEARANCE_PX;
+      if (!nearVideo) {
         const box = e.currentTarget.getBoundingClientRect();
         setBursts((cur) => [...cur.slice(-2), { id: now, x: e.clientX - box.left, y: e.clientY - box.top }]);
       }
@@ -261,7 +280,9 @@ function Band({ p }: { p: ReelCardProps }) {
   const still = buildImageUrl(p.item.backdropPath ?? p.item.posterPath, 'w780');
   const playing = p.player === 'play';
   return (
-    <div data-video className="relative aspect-video w-full overflow-hidden bg-black">
+    // 16:9, but never under YouTube's 200px minimum (narrow phones, short
+    // windows): the player letterboxes inside the taller band.
+    <div data-video className="relative aspect-video w-full overflow-hidden bg-black" style={{ minHeight: MIN_PLAYER_PX }}>
       {!playing && still && <Image src={still} alt="" fill sizes="560px" className="object-cover" />}
       {/* Only a paused card shows an icon. Paused, the player is hidden behind
           our still, so this never sits on top of YouTube's player. */}
@@ -286,6 +307,8 @@ function Band({ p }: { p: ReelCardProps }) {
             captions
             onError={p.onVideoError}
             onAutoplayBlocked={p.onAutoplayBlocked}
+            // Paused with YouTube's own player: our state follows (still + play).
+            onPausedInPlayer={p.togglePlay}
           />
         </div>
       )}
@@ -344,6 +367,9 @@ function CaptionBar({ p }: { p: ReelCardProps }) {
   const skip = LOGO_SKIP[item.video.type];
   return (
     <div className="flex items-center gap-2 px-4 py-2.5">
+      <RoundButton label={p.userPaused ? 'Play (Space)' : 'Pause (Space)'} onClick={p.togglePlay}>
+        {p.userPaused ? <Play className="ml-0.5 h-3.5 w-3.5 fill-current" /> : <Pause className="h-3.5 w-3.5 fill-current" />}
+      </RoundButton>
       <SoundControl p={p} />
       <p className="ml-1 min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {item.video.type}

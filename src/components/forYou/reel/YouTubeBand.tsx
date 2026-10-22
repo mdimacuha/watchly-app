@@ -1,8 +1,10 @@
 'use client';
 
 // YouTube IFrame Player API wrapper for the For You reel.
-// Nothing of ours is ever drawn on top of the player (YouTube RMF); callers
-// put every control outside this element.
+// Nothing of ours is ever drawn on top of the player and the player is never
+// blocked (YouTube Required Minimum Functionality, Developer Policies III.I.4
+// and III.I.6): people can use YouTube's own title, links and pause in it.
+// Callers put every control of ours outside this element.
 
 import { useEffect, useRef } from 'react';
 
@@ -57,6 +59,7 @@ export function YouTubeBand({
   onError,
   onProgress,
   onAutoplayBlocked,
+  onPausedInPlayer,
 }: {
   videoKey: string;
   /** play = visible and active; cue = mounted early, paused (next item). */
@@ -73,14 +76,16 @@ export function YouTubeBand({
   onProgress?: (fraction: number) => void;
   /** Sound-on autoplay was refused by the browser; the band fell back to muted. */
   onAutoplayBlocked?: () => void;
+  /** The viewer paused it with YouTube's own player (we didn't ask). */
+  onPausedInPlayer?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
   // Latest props for callbacks created once at player construction.
-  const live = useRef({ mode, muted, volume, onState, onError, onProgress, onAutoplayBlocked });
+  const live = useRef({ mode, muted, volume, onState, onError, onProgress, onAutoplayBlocked, onPausedInPlayer });
   useEffect(() => {
-    live.current = { mode, muted, volume, onState, onError, onProgress, onAutoplayBlocked };
+    live.current = { mode, muted, volume, onState, onError, onProgress, onAutoplayBlocked, onPausedInPlayer };
   });
 
   useEffect(() => {
@@ -120,6 +125,9 @@ export function YouTubeBand({
               playerRef.current?.seekTo(start ?? 0, true);
               playerRef.current?.playVideo();
             }
+            // Paused while we want it playing: the viewer used YouTube's player.
+            // (Our own pauses happen after mode has already left 'play'.)
+            if (e.data === YT_STATE.PAUSED && live.current.mode === 'play') live.current.onPausedInPlayer?.();
             live.current.onState?.(e.data);
           },
           onError: (e: { data: number }) => live.current.onError?.(e.data),
@@ -181,10 +189,9 @@ export function YouTubeBand({
     return () => clearInterval(id);
   }, [mode, onProgress]);
 
-  // The player gets no pointer input, so YouTube never draws its hover
-  // chrome (title, share, watch later). Play/pause and sound are our own
-  // buttons outside the frame. Nothing is layered over the player.
-  return <div ref={hostRef} className="pointer-events-none h-full w-full bg-black [&>iframe]:h-full [&>iframe]:w-full" />;
+  // The player takes input like any embed: YouTube shows its own title and
+  // links on hover and when paused. Our play/pause and sound sit outside it.
+  return <div ref={hostRef} className="h-full w-full bg-black [&>iframe]:h-full [&>iframe]:w-full" />;
 }
 
 /** YouTube's mark for "via YouTube" credits, drawn on our frame, never on the player. */
