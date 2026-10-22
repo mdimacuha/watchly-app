@@ -52,7 +52,7 @@ export function FollowListClient({
         <Users className="h-8 w-8 text-muted-foreground" />
         <p className="font-medium">{emptyTitle}</p>
         {emptyHint && <p className="text-sm text-muted-foreground">{emptyHint}</p>}
-        <Link href="/search" className="mt-2 text-sm text-primary hover:underline">
+        <Link href="/discover" className="mt-2 text-sm text-primary hover:underline">
           Find people
         </Link>
       </div>

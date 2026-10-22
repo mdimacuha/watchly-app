@@ -63,6 +63,10 @@ export function TitleHero({
         className={cn(
           'relative overflow-hidden bg-background transition-[height] duration-500 ease-out motion-reduce:transition-none',
           playing ? 'block' : 'hidden md:block',
+          // Under the floating sidebar the backdrop runs to the screen edge, so the
+          // translucent panel shows it. Never while a trailer plays: nothing over
+          // the player.
+          !playing && 'md:-ml-(--float-bleed)',
         )}
         style={{ height: playing ? PLAYER_HEIGHT : BAND_HEIGHT }}
       >

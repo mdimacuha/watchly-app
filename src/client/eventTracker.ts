@@ -78,10 +78,13 @@ export function createEventTracker<E extends TrackedEvent>(
     });
   }
 
-  return (event: E) => {
+  const track = (event: E) => {
     if (typeof window === 'undefined') return;
     queue.push(event);
     if (queue.length >= MAX_BATCH) flush();
     else if (!timer) timer = setTimeout(() => flush(), FLUSH_DELAY_MS);
   };
+  /** Send what's queued now, for events added while the page is going away. */
+  track.flushNow = () => flush(true);
+  return track;
 }

@@ -1,41 +1,28 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { Bell, LogOut, PanelLeft, PanelLeftClose, Pin, PinOff, Search, Settings, X } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
 import { getUnreadNotificationCountAction } from '@/actions/notifications';
 import { NOTIFICATIONS_READ_EVENT } from '@/client/notifications';
-import {
-  Search,
-  Sparkles,
-  Clapperboard,
-  ArrowLeftRight,
-  Bookmark,
-  Heart,
-  Settings,
-  User,
-  PanelLeftClose,
-  PanelLeft,
-  LogOut,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import { Bell } from 'lucide-react';
-import Link from 'next/link';
 import { useUIStore } from '@/client/stores/ui';
 import { useAuthStore } from '@/client/stores/auth';
 import { useToast } from '@/hooks/useToast';
-import { SidebarNavItem } from './SidebarNavItem';
-import { SidebarAnnouncementCard } from './SidebarAnnouncementCard';
+import { setSidebarPrefs, useSidebarPrefs } from '@/client/sidebarPrefs';
 import { useChangelogPromo } from '@/components/changelog/ChangelogPromoProvider';
-import { StatusPill, type StatusPillKind } from '@/components/watchly/StatusPill';
-import { RegionButton } from '@/components/region/RegionButton';
-import { IconButton } from '@/components/ui/icon-button';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ConfirmDestructiveModal } from '@/components/ui/ConfirmDestructiveModal';
 import { cn } from '@/lib/cn';
 import { PATHS, EXTERNAL_PATHS } from '@/lib/app';
-import Image from 'next/image';
+import { SidebarAnnouncementCard } from './SidebarAnnouncementCard';
+import { SidebarRegion } from './SidebarRegion';
+import { SidebarSearch, useSearchShortcut } from './SidebarSearch';
+import { SidebarTonight } from './SidebarTonight';
+import { SidebarTree } from './SidebarTree';
+import { DISCOVER, PROFILE, activeNavId, type NavNode } from './sidebarNav';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,23 +30,13 @@ import Image from 'next/image';
 
 export const SIDEBAR_WIDTH_EXPANDED = 280;
 export const SIDEBAR_WIDTH_COLLAPSED = 68;
+/** Floating: a slim rail, opening (over the page, unless pinned) to the full panel. */
+export const SIDEBAR_FLOAT_RAIL = 64;
+export const SIDEBAR_FLOAT_OPEN = 280;
 
 const sidebarSpring = { type: 'spring' as const, stiffness: 300, damping: 30 };
-
-// ---------------------------------------------------------------------------
-// Navigation config
-// ---------------------------------------------------------------------------
-
-const MENU_ITEMS: { href: string; icon: LucideIcon; label: string; pill?: StatusPillKind }[] = [
-  { href: '/search', icon: Search, label: 'Search' },
-  { href: '/for-you', icon: Sparkles, label: 'For You', pill: 'beta' },
-  { href: '/programme', icon: Clapperboard, label: "Tonight's Programme", pill: 'new' },
-  // Swipe is still being tuned (recommendation weights, gesture feel) —
-  // flag it as experimental so users know what they're stepping into.
-  { href: '/swipe', icon: ArrowLeftRight, label: 'Watchly Swipe' },
-  { href: '/watchlists', icon: Bookmark, label: 'Watchlists' },
-  { href: '/favorites', icon: Heart, label: 'Favorites' },
-];
+// Floating with fluid motion: a softer, slightly springier settle.
+const FLUID_SPRING = { type: 'spring' as const, stiffness: 260, damping: 28, mass: 0.9 };
 
 // ---------------------------------------------------------------------------
 // Component
@@ -76,12 +53,25 @@ interface AppSidebarProps {
   fullPage?: boolean;
   /** Called by the close button when fullPage is true. */
   onClose?: () => void;
+  /**
+   * The experimental floating sidebar (Settings › Sidebar): a rail off the
+   * screen's edge that opens over the page on hover or focus, or stays open
+   * when pinned. The collapsed prop doesn't apply to it.
+   */
+  floating?: { translucent: boolean; fluid: boolean } | null;
 }
 
+/**
+ * Search on top; then the two trees (Discover: the ways to find something;
+ * My Profile: what you've kept); then Tonight, a ticket answering "what
+ * tonight?"; then where you are, Settings and sign out. Collapsed, it's an
+ * icon rail with every destination its own icon.
+ */
 export function AppSidebar({
   collapsed,
   fullPage = false,
   onClose,
+  floating = null,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const toast = useToast();
@@ -195,323 +185,380 @@ export function AppSidebar({
     // refetch-on-navigation behaviour.
   }, [pathname, applyUnread]);
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(`${href}/`);
+  const prefs = useSidebarPrefs();
+  const active = activeNavId(pathname);
+  const onSettings = pathname.startsWith(PATHS.SETTINGS.ROOT);
+
+  // Floating: open while pinned, or while the pointer or keyboard focus is
+  // inside it. Brief delays so just passing over it does nothing.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peekTo = (open: boolean, ms: number) => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => setPeek(open), ms);
+  };
+  useEffect(() => () => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+  }, []);
+
+  const floats = !!floating && !fullPage;
+  const fluid = floats && floating.fluid;
+  const pinned = prefs.pinned;
+  const hoverable = floats && !pinned;
+  const rail = fullPage ? false : floats ? !(pinned || peek) : collapsed;
+  const width = fullPage
+    ? undefined
+    : floats
+      ? rail ? SIDEBAR_FLOAT_RAIL : SIDEBAR_FLOAT_OPEN
+      : collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
 
   const handleMobileNav = () => {
     if (window.innerWidth < 768) closeMobileOverlay();
+    // Floating folds back away once you've picked somewhere.
+    if (hoverable) setPeek(false);
   };
+
+  const avatar = (
+    <UserAvatar avatarUrl={user?.avatarUrl} firstName={user?.firstName} lastName={user?.lastName} size="sm" />
+  );
+
+  const bell = (
+    <Link
+      href="/notifications"
+      onClick={() => {
+        handleMobileNav();
+        markNotificationsRead();
+      }}
+      aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+      title={rail ? 'Notifications' : undefined}
+      className={cn(
+        'relative flex shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        rail ? 'mx-auto h-10 w-10' : 'h-9 w-9',
+      )}
+    >
+      <Bell size={18} aria-hidden />
+      {unreadCount > 0 && (
+        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground tabular-nums">
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </Link>
+  );
+
+  // ---- Contents, shared by every layout ----
+
+  const brand = (
+    <SidebarBrand
+      collapsed={rail}
+      fullPage={fullPage}
+      onClose={onClose}
+      onToggle={floats ? () => setSidebarPrefs({ pinned: !pinned }) : toggleSidebar}
+      pinned={floats ? pinned : undefined}
+    />
+  );
+
+  const trees = (
+    <div className="flex flex-col gap-4">
+      <SidebarTree group={DISCOVER} active={active} onNavigate={handleMobileNav} fluid={fluid} />
+      <SidebarTree group={PROFILE} active={active} onNavigate={handleMobileNav} avatar={avatar} aside={bell} fluid={fluid} />
+    </div>
+  );
+
+  // Settings › Sidebar can turn it off (then it isn't even fetched).
+  const tonight = prefs.tonight === 'off' ? null : <SidebarTonight onNavigate={handleMobileNav} show={prefs.tonight} />;
+
+  // Feature announcement: copy from the newest changelog's "Promotional"
+  // section, dismissal keyed per release. Scrolls with the nav so it never
+  // pushes it off screen.
+  const promoCard = promo && (
+    <SidebarAnnouncementCard
+      key={promo.slug}
+      title={promo.title}
+      description={promo.description}
+      ctaLabel={promo.ctaLabel}
+      ctaHref={promo.ctaHref}
+      storageKey={`watchly_announce_${promo.slug}`}
+      onCtaClick={handleMobileNav}
+      // Sidebar is always-dark: override the theme-flipping card tokens
+      // with white-alpha surfaces so it stays correct in light mode too.
+      className="border-white/10 bg-white/[0.04] shadow-none"
+    />
+  );
+
+  const footer = rail ? (
+    <div className="flex shrink-0 flex-col items-center gap-1 pb-4 pt-2">
+      <RailLink node={{ id: 'settings', href: PATHS.SETTINGS.ROOT, label: 'Settings', icon: Settings }} on={onSettings} />
+      <SidebarRegion collapsed />
+      <SignOutButton onClick={() => setConfirmOpen(true)} disabled={signingOut} rail />
+    </div>
+  ) : (
+    <div className="min-w-[264px] shrink-0 border-t border-white/5 px-2 pb-3 pt-2">
+      <SidebarRegion />
+      <div className="mt-1 flex items-center gap-0.5">
+        <Link
+          href={PATHS.SETTINGS.ROOT}
+          onClick={handleMobileNav}
+          aria-current={onSettings ? 'page' : undefined}
+          className={cn(
+            'flex h-9 flex-1 items-center gap-2.5 rounded-lg px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            onSettings ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
+          )}
+        >
+          <Settings size={17} aria-hidden /> Settings
+        </Link>
+        <SignOutButton onClick={() => setConfirmOpen(true)} disabled={signingOut} />
+      </div>
+      <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 pt-1.5 text-[11px] text-muted-foreground">
+        <FooterLink href={EXTERNAL_PATHS.BUSINESS.TERMS_OF_SERVICE} onClick={handleMobileNav}>Terms</FooterLink>
+        <span aria-hidden className="opacity-40">·</span>
+        <FooterLink href={PATHS.BUSINESS.PRIVACY_POLICY} onClick={handleMobileNav}>Privacy</FooterLink>
+        <span aria-hidden className="opacity-40">·</span>
+        <FooterLink href={PATHS.CHANGELOGS} onClick={handleMobileNav}>What&apos;s new</FooterLink>
+        <span aria-hidden className="opacity-40">·</span>
+        <a href={PATHS.BUSINESS.CONTACT} className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Feedback
+        </a>
+      </nav>
+    </div>
+  );
+
+  const confirm = (
+    <ConfirmDestructiveModal
+      isOpen={confirmOpen}
+      onClose={() => setConfirmOpen(false)}
+      onConfirm={handleSignOut}
+      icon={LogOut}
+      title="Sign out?"
+      description="You'll need to sign in again to access your watchlists and recommendations."
+      confirmLabel="Sign out"
+      cancelLabel="Cancel"
+    />
+  );
+
+  // ---- Surfaces ----
+
+  // Docked: always-dark even in light theme. Override foreground/muted-
+  // foreground inside so descendant text utilities resolve to their dark-mode
+  // values. Sets both the base vars and the `--color-*` aliases Tailwind v4
+  // reads (mirrors the same dual-write pattern AccentScope uses). Floating
+  // also says what colour its surface is, for the ticket's punched notches.
+  const translucent = floats && floating.translucent;
+  const vars = {
+    '--foreground': '#fafafa',
+    '--muted-foreground': '#a1a1aa',
+    '--color-foreground': '#fafafa',
+    '--color-muted-foreground': '#a1a1aa',
+    '--sidebar-surface': translucent ? 'rgb(12 13 20 / 0.72)' : '#0c0d14',
+  } as React.CSSProperties;
+  // A floating surface: lifted off the page by a soft shadow (depth, not a
+  // glow), a hairline edge, and either solid or letting the page show through.
+  const floatSurface = cn(
+    'rounded-[22px] border border-white/[0.07] shadow-[0_18px_48px_-18px_rgb(0_0_0/0.7)]',
+    translucent ? 'bg-[#0c0d14]/72 backdrop-blur-xl backdrop-saturate-150' : 'bg-[#0c0d14]',
+  );
+  const widthTransition = floats ? (fluid ? FLUID_SPRING : { duration: 0 }) : sidebarSpring;
 
   return (
     <motion.aside
       // Animated width is meaningless when the parent gives us the full
       // viewport — skip the spring entirely in fullPage mode.
-      animate={
-        fullPage
-          ? undefined
-          : {
-              width: collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
+      animate={width === undefined ? undefined : { width }}
+      transition={widthTransition}
+      style={vars}
+      onMouseEnter={hoverable ? () => peekTo(true, 90) : undefined}
+      onMouseLeave={hoverable ? (e) => !inSidebarLayer(e.relatedTarget) && peekTo(false, 220) : undefined}
+      onFocus={hoverable ? () => peekTo(true, 0) : undefined}
+      onBlur={
+        hoverable
+          ? (e) => {
+              const to = e.relatedTarget as Node | null;
+              if (!e.currentTarget.contains(to) && !inSidebarLayer(to)) peekTo(false, 0);
             }
+          : undefined
       }
-      transition={sidebarSpring}
-      // Sidebar is intentionally always-dark even in light theme. Override
-      // foreground/muted-foreground inside so descendant `text-foreground`
-      // / `text-muted-foreground` utilities resolve to their dark-mode
-      // values and stay readable on the dark bg. Sets both the base vars
-      // and the `--color-*` aliases Tailwind v4 reads (mirrors the same
-      // dual-write pattern AccentScope uses).
-      style={{
-        '--foreground': '#fafafa',
-        '--muted-foreground': '#a1a1aa',
-        '--color-foreground': '#fafafa',
-        '--color-muted-foreground': '#a1a1aa',
-      } as React.CSSProperties}
+      onKeyDown={hoverable ? (e) => e.key === 'Escape' && setPeek(false) : undefined}
       className={cn(
-        'h-full flex flex-col bg-[#0c0d14] overflow-hidden',
-        fullPage ? 'w-full' : 'border-r border-white/5',
+        'h-full flex flex-col overflow-hidden text-foreground',
+        floats ? floatSurface : cn('bg-[#0c0d14]', fullPage ? 'w-full' : 'border-r border-white/5'),
+        fullPage && 'w-full',
       )}
     >
-      {/* ---- Brand ---- */}
-      <div
-        className={cn(
-          'flex items-center shrink-0 px-4',
-          fullPage ? 'h-16 justify-center relative' : 'h-16',
-        )}
-      >
-        {fullPage ? (
-          /* Mobile full-page: centred brand + close (X) button on the
-             right. No collapse toggle — full-page mode has no expanded/
-             collapsed states. */
-          <>
-            <Link
-              href={PATHS.BASE_URL}
-              className="flex items-center gap-2 group"
-              onClick={onClose}
-            >
-              <Image
-                src="/brand-light.svg"
-                alt="Watchly Logo"
-                width={32}
-                height={32}
-                className="w-auto h-auto mt-2"
-                priority
-              />
-            </Link>
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors cursor-pointer"
-                aria-label="Close menu"
-              >
-                <X size={20} />
-              </button>
-            )}
-          </>
-        ) : collapsed ? (
-          /* Collapsed: icon-only brand + expand button */
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            className="mx-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors cursor-pointer"
-            aria-label="Expand sidebar"
-          >
-            <PanelLeft size={18} />
-          </button>
-        ) : (
-          /* Expanded: brand + collapse button */
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
-              <Link
-                href={PATHS.BASE_URL}
-                className="flex items-center gap-2 group z-20"
-              >
-                <Image
-                  src="/brand-light.svg"
-                  alt="Watchly Logo"
-                  width={32}
-                  height={32}
-                  className="w-auto h-auto mt-2"
-                />
-              </Link>
-            </div>
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors cursor-pointer"
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeftClose size={18} />
-            </button>
-          </div>
-        )}
-      </div>
+      {brand}
 
-      {/* ---- Menu section ---- */}
-      <nav className="flex-1 overflow-y-auto px-2 pt-2">
-        {!collapsed && (
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-            Menu
-          </p>
-        )}
-        <div className="space-y-0.5">
-          {MENU_ITEMS.map(item => (
-            <SidebarNavItem
-              key={item.href}
-              href={item.href}
-              icon={item.icon}
-              label={item.label}
-              isActive={isActive(item.href)}
-              collapsed={collapsed}
-              onClick={handleMobileNav}
-              badge={
-                item.pill ? <StatusPill kind={item.pill} size="sm" /> : undefined
-              }
-            />
-          ))}
-        </div>
-
-        {!collapsed && (
-          <p className="px-3 pt-6 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-            Profile
-          </p>
-        )}
-        {collapsed && <div className="pt-4" />}
-        <div className="space-y-0.5">
-          {/* My Profile row with notification button */}
-          <div className={collapsed ? 'space-y-0.5' : 'flex items-center'}>
-            <div className="flex-1 min-w-0">
-              <SidebarNavItem
-                href="/me"
-                icon={User}
-                label="My Profile"
-                isActive={isActive('/me')}
-                collapsed={collapsed}
-                avatar={
-                  <UserAvatar
-                    avatarUrl={user?.avatarUrl}
-                    firstName={user?.firstName}
-                    lastName={user?.lastName}
-                    size="sm"
-                  />
-                }
-                onClick={handleMobileNav}
-              />
-            </div>
-            {!collapsed && (
-              <Link
-                href="/notifications"
-                onClick={() => {
-                  handleMobileNav();
-                  markNotificationsRead();
-                }}
-              >
-                <IconButton
-                  icon={Bell}
-                  count={unreadCount}
-                  size="sm"
-                  className="shrink-0 mr-1"
-                  aria-label="Notifications"
-                />
-              </Link>
-            )}
-            {collapsed && (
-              <div className="flex justify-center">
-                <Link
-                  href="/notifications"
-                  onClick={() => {
-                    handleMobileNav();
-                    markNotificationsRead();
-                  }}
-                >
-                  <IconButton
-                    icon={Bell}
-                    count={unreadCount}
-                    size="sm"
-                    aria-label="Notifications"
-                  />
-                </Link>
-              </div>
-            )}
-          </div>
-
-          {/* Settings */}
-          <SidebarNavItem
-            href="/settings"
-            icon={Settings}
-            label="Settings"
-            isActive={isActive('/settings')}
-            collapsed={collapsed}
-            onClick={handleMobileNav}
-          />
-
-          {/* Sign out — pinned right under Settings since both are
-              "account housekeeping" actions. Same row metrics as
-              SidebarNavItem so it lines up visually with the items
-              above it, but it's a <button> (not a Link) since it
-              fires an action instead of navigating. */}
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(true)}
-            disabled={signingOut}
-            title={collapsed ? 'Sign out' : undefined}
-            className={cn(
-              'flex items-center rounded-lg text-sm font-medium transition-colors cursor-pointer',
-              'text-muted-foreground hover:text-foreground hover:bg-white/5',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              collapsed ? 'justify-center h-11 w-11 mx-auto' : 'gap-3 px-3 h-11 w-full',
-            )}
-            aria-label="Sign out"
-          >
-            <LogOut size={20} />
-            {!collapsed && <span>Sign out</span>}
-          </button>
-        </div>
-      </nav>
-
-      {/* ---- Feature announcement (expanded / full-page only) ----
-          Sits in a shrink-0 block just above the footer so the nav above
-          keeps its own scroll (flex-1 overflow-y-auto) and this never
-          pushes menu items off-screen. Hidden in the collapsed icon rail.
-          Copy comes from the newest changelog's "Promotional" section
-          (changelogs/*.md); the dismissal is keyed per release. */}
-      {!collapsed && promo && (
-        <div className="shrink-0 px-3 pt-2">
-          <SidebarAnnouncementCard
-            key={promo.slug}
-            title={promo.title}
-            description={promo.description}
-            ctaLabel={promo.ctaLabel}
-            ctaHref={promo.ctaHref}
-            storageKey={`watchly_announce_${promo.slug}`}
-            onCtaClick={handleMobileNav}
-            // Sidebar is always-dark: override the theme-flipping card tokens
-            // with white-alpha surfaces so it stays correct in light mode too.
-            className="border-white/10 bg-white/[0.04] shadow-none"
-          />
-        </div>
-      )}
-
-      {/* ---- Region picker pinned to bottom ---- */}
-      <div className={cn('shrink-0 pt-2', collapsed ? 'pb-4' : 'pb-2')}>
-        <RegionButton collapsed={collapsed} />
-      </div>
-
-      {/* ---- Footer links (expanded / full-page only) ---- */}
-      {!collapsed && (
-        <nav
-          aria-label="Footer"
-          className="shrink-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 pb-4 text-xs text-muted-foreground"
+      {rail ? (
+        <SidebarRail active={active} avatar={avatar} bell={bell} />
+      ) : (
+        <motion.div
+          // Floating: the panel's contents arrive just behind the width, so they never squeeze.
+          initial={fluid ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.18, delay: 0.06 }}
+          className="flex min-h-0 min-w-[264px] flex-1 flex-col"
         >
-          <Link
-            href={EXTERNAL_PATHS.BUSINESS.TERMS_OF_SERVICE}
-            onClick={handleMobileNav}
-            className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Terms
-          </Link>
-          <span aria-hidden className="opacity-40">
-            ·
-          </span>
-          <Link
-            href={PATHS.BUSINESS.PRIVACY_POLICY}
-            onClick={handleMobileNav}
-            className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Privacy
-          </Link>
-          <span aria-hidden className="opacity-40">
-            ·
-          </span>
-          <Link
-            href={PATHS.CHANGELOGS}
-            onClick={handleMobileNav}
-            className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            What&apos;s new
-          </Link>
-          <span aria-hidden className="opacity-40">
-            ·
-          </span>
-          <a
-            href={PATHS.BUSINESS.CONTACT}
-            className="hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Feedback
-          </a>
-        </nav>
+          {/* Search stays put at the top; everything under it scrolls. */}
+          <div className="shrink-0 px-2">
+            <SidebarSearch onNavigate={handleMobileNav} />
+          </div>
+          {/* Scrolls without a visible scrollbar. */}
+          <nav aria-label="Main" className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            {trees}
+            {tonight && <div className="mt-7 px-1">{tonight}</div>}
+            {promoCard && <div className="mt-4 px-1">{promoCard}</div>}
+          </nav>
+        </motion.div>
       )}
 
-      <ConfirmDestructiveModal
-        isOpen={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={handleSignOut}
-        icon={LogOut}
-        title="Sign out?"
-        description="You'll need to sign in again to access your watchlists and recommendations."
-        confirmLabel="Sign out"
-        cancelLabel="Cancel"
-      />
+      {footer}
+      {confirm}
     </motion.aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pieces
+// ---------------------------------------------------------------------------
+
+/**
+ * Popovers the sidebar opens (Tonight's info, the region picker) live in
+ * portals outside it; moving into one mustn't fold the floating sidebar away.
+ */
+function inSidebarLayer(node: EventTarget | null): boolean {
+  return node instanceof Element && !!node.closest('[data-sidebar-layer]');
+}
+
+const ICON_BUTTON = 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground cursor-pointer';
+
+function SidebarBrand({
+  collapsed,
+  fullPage,
+  onClose,
+  onToggle,
+  pinned,
+}: {
+  collapsed: boolean;
+  fullPage: boolean;
+  onClose?: () => void;
+  onToggle: () => void;
+  /** Floating: the toggle pins the panel open instead of collapsing it. */
+  pinned?: boolean;
+}) {
+  const pinButton = pinned !== undefined && (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={pinned}
+      aria-label={pinned ? 'Let the sidebar fold away' : 'Keep the sidebar open'}
+      title={pinned ? 'Let it fold away' : 'Keep it open'}
+      className={ICON_BUTTON}
+    >
+      {pinned ? <PinOff size={17} /> : <Pin size={17} />}
+    </button>
+  );
+  if (fullPage) {
+    // Phone menu: centred brand, close on the right, no collapse toggle.
+    return (
+      <div className="relative flex h-16 shrink-0 items-center justify-center px-4">
+        <Link href={PATHS.BASE_URL} onClick={onClose}>
+          <Image src="/brand-light.svg" alt="Watchly" width={32} height={32} className="mt-2 h-auto w-auto" priority />
+        </Link>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Close menu" className={cn('absolute right-3 top-1/2 -translate-y-1/2 p-2', ICON_BUTTON)}>
+            <X size={20} />
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (collapsed) {
+    return (
+      <div className="flex h-16 shrink-0 items-center justify-center">
+        {pinButton || <button type="button" onClick={onToggle} aria-label="Expand sidebar" className={ICON_BUTTON}>
+          <PanelLeft size={18} />
+        </button>}
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-16 shrink-0 items-center justify-between px-4">
+      <Link href={PATHS.BASE_URL}>
+        <Image src="/brand-light.svg" alt="Watchly" width={32} height={32} className="mt-2 h-auto w-auto" />
+      </Link>
+      {pinButton || (
+        <button type="button" onClick={onToggle} aria-label="Collapse sidebar" className={ICON_BUTTON}>
+          <PanelLeftClose size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RailLink({ node, on, children }: { node: NavNode; on: boolean; children?: React.ReactNode }) {
+  const Icon = node.icon;
+  return (
+    <Link
+      href={node.href}
+      title={node.label}
+      aria-label={node.label}
+      aria-current={on ? 'page' : undefined}
+      className={cn(
+        'mx-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        on ? 'bg-white/10 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
+      )}
+    >
+      {children ?? <Icon size={19} aria-hidden />}
+    </Link>
+  );
+}
+
+/** Collapsed: every destination is its own icon (no flyouts), named on hover. */
+function SidebarRail({ active, avatar, bell }: { active: string | null; avatar: React.ReactNode; bell: React.ReactNode }) {
+  const router = useRouter();
+  useSearchShortcut(() => router.push(PATHS.DISCOVER));
+  const divider = <div className="mx-auto my-1.5 h-px w-6 shrink-0 bg-white/10" aria-hidden />;
+  return (
+    <nav aria-label="Main" className="no-scrollbar flex flex-1 flex-col gap-1 overflow-y-auto py-2">
+      <RailLink node={{ id: 'search', href: PATHS.DISCOVER, label: 'Search (/)', icon: Search }} on={false} />
+      {divider}
+      {[DISCOVER.parent, ...DISCOVER.children].map((n) => (
+        <RailLink key={n.id} node={n} on={active === n.id} />
+      ))}
+      {divider}
+      <RailLink node={PROFILE.parent} on={active === PROFILE.parent.id}>
+        {avatar}
+      </RailLink>
+      {PROFILE.children.map((n) => (
+        <RailLink key={n.id} node={n} on={active === n.id} />
+      ))}
+      {divider}
+      {bell}
+    </nav>
+  );
+}
+
+function SignOutButton({ onClick, disabled, rail }: { onClick: () => void; disabled: boolean; rail?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title="Sign out"
+      aria-label="Sign out"
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground cursor-pointer',
+        'disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        rail ? 'h-10 w-10' : 'h-9 w-9',
+      )}
+    >
+      <LogOut size={rail ? 19 : 17} aria-hidden />
+    </button>
+  );
+}
+
+function FooterLink({ href, onClick, children }: { href: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Link href={href} onClick={onClick} className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {children}
+    </Link>
   );
 }

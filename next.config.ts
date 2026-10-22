@@ -13,7 +13,11 @@ const nextConfig: NextConfig = {
   // The Programme moved from /for-you to /programme; keep old Deeper / View All
   // links working. Temporary (not 308) so /for-you can grow sub-pages later.
   async redirects() {
-    return [{ source: '/for-you/:path+', destination: '/programme/:path+', permanent: false }];
+    return [
+      { source: '/for-you/:path+', destination: '/programme/:path+', permanent: false },
+      // Search became Discover's home page; old links and bookmarks keep their query.
+      { source: '/search', destination: '/discover', permanent: true },
+    ];
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],

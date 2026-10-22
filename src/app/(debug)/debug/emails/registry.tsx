@@ -36,7 +36,7 @@ export const EMAIL_PREVIEWS: EmailPreviewEntry[] = [
     subject: 'Welcome to Watchly',
     element: WelcomeEmail({
       recipientName: 'Marc',
-      searchUrl: `${PREVIEW_BASE}/search`,
+      searchUrl: `${PREVIEW_BASE}/discover`,
     }),
   },
   {

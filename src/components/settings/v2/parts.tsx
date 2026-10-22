@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -11,18 +11,12 @@ import {
   Lock,
   LogOut,
   Monitor,
-  Moon,
-  MonitorSmartphone,
   Smartphone,
-  Sun,
   Trash2,
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useToast } from '@/hooks/useToast';
 import { useRegionStore } from '@/client/stores/region';
-import { useTheme, type Theme } from '@/components/theme/ThemeProvider';
-import { updateThemeAction } from '@/actions/settings';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ConfirmDestructiveModal } from '@/components/ui/ConfirmDestructiveModal';
 import { RegionSelector } from '@/components/region/RegionSelector';
@@ -30,11 +24,11 @@ import { PreferencesPicker } from '@/components/forYou/PreferencesPicker';
 import { AccountSettingsClient } from '@/components/settings/AccountSettingsClient';
 import { NotificationPrefsForm } from '@/components/notifications/NotificationPrefsForm';
 import { TitleAlertsList } from '@/components/notifications/TitleAlertsList';
-import { BannerToggle } from '@/components/profile/BannerToggle';
 import { formatRelativeAgo } from '@/lib/format';
 import type { PrivacyLevel } from '@/services/profile/visibility';
 import type { PreviewRole } from '@/services/profile/visitorPreview';
 import type { SettingsState } from './useSettings';
+import { SidebarControls } from './SidebarControls';
 
 // The Settings sections, written once and arranged differently by each
 // layout (A ledger, B visitor's view, C two-pane). Every control says, in a
@@ -488,59 +482,6 @@ export function ServicesControl({ s }: { s: SettingsState }) {
 }
 
 // ---------------------------------------------------------------------------
-// Look
-// ---------------------------------------------------------------------------
-
-const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: 'system', label: 'System', icon: MonitorSmartphone },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'light', label: 'Light', icon: Sun },
-];
-
-export function AppearanceControls() {
-  const { theme, setTheme } = useTheme();
-  const [, startTransition] = useTransition();
-  const toast = useToast();
-  const pick = (next: Theme) => {
-    if (next === theme) return;
-    setTheme(next);
-    startTransition(async () => {
-      try {
-        await updateThemeAction(next);
-      } catch {
-        toast.error('Could not save theme preference', 'Saved on this device only.');
-      }
-    });
-  };
-  return (
-    <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-sm font-semibold text-foreground">Theme</legend>
-        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-md bg-secondary p-1">
-          {THEMES.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              role="radio"
-              aria-checked={theme === t.value}
-              onClick={() => pick(t.value)}
-              className={cn(
-                'flex items-center justify-center gap-1.5 rounded-sm px-2 py-2 text-sm font-medium cursor-pointer',
-                theme === t.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <t.icon className="h-3.5 w-3.5" /> {t.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">System follows your device. Saved to your account.</p>
-      </fieldset>
-      <BannerToggle />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 
@@ -582,14 +523,14 @@ export function DataControls() {
 // Section registry: grouped by the question people arrive with
 // ---------------------------------------------------------------------------
 
-export type SectionId = 'privacy' | 'notifications' | 'account' | 'watching' | 'look' | 'data';
+export type SectionId = 'privacy' | 'notifications' | 'account' | 'watching' | 'sidebar' | 'data';
 
 export const SECTIONS: { id: SectionId; title: string; question: string }[] = [
   { id: 'privacy', title: 'Privacy', question: 'Who can see my stuff?' },
   { id: 'notifications', title: 'Notifications', question: 'What will Watchly ping me about?' },
   { id: 'account', title: 'Account & devices', question: 'Is my account safe?' },
   { id: 'watching', title: 'Region & services', question: 'Where and what do I watch?' },
-  { id: 'look', title: 'Appearance', question: 'How does Watchly look?' },
+  { id: 'sidebar', title: 'Sidebar', question: 'What does my sidebar show, and where?' },
   { id: 'data', title: 'Your data', question: 'Can I take my data, or leave?' },
 ];
 
@@ -620,8 +561,8 @@ export function SectionBody({ id, s, withPreview = true }: { id: SectionId; s: S
           <ServicesControl s={s} />
         </div>
       );
-    case 'look':
-      return <AppearanceControls />;
+    case 'sidebar':
+      return <SidebarControls />;
     case 'data':
       return <DataControls />;
   }

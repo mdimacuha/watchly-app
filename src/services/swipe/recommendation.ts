@@ -80,6 +80,10 @@ interface SwipeDeckOptions {
   region?: string;
   limit?: number;
   availableOnly?: boolean;
+  /** Extra "movie:1" keys to leave out (e.g. titles the reel showed recently). */
+  exclude?: Iterable<string>;
+  /** Splice in trending wildcards (default true). The reel brings its own. */
+  wildcards?: boolean;
 }
 
 interface SwipeDeckResult {
@@ -120,7 +124,7 @@ export async function getSwipeDeck(
       getSelectedProviders(userId),
     ]);
 
-  const excludeSet = new Set<string>([...baseExcludeSet, ...swipeKeys]);
+  const excludeSet = new Set<string>([...baseExcludeSet, ...swipeKeys, ...(opts.exclude ?? [])]);
 
   // Build a passed-genre tally to feed the scoring penalty. We can't
   // know the genres of the passed titles without enriching them, but
@@ -232,7 +236,7 @@ export async function getSwipeDeck(
   const scoredKeys = new Set(
     items.map((i) => `${i.mediaType}:${i.tmdbId}`),
   );
-  const wildcards = await getWildcardPool(region, excludeSet, scoredKeys);
+  const wildcards = opts.wildcards === false ? [] : await getWildcardPool(region, excludeSet, scoredKeys);
 
   const out: SwipeDeckItem[] = [];
   let wildcardIdx = 0;

@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { recordRecentTitle } from '@/client/recentTitles';
 import { type TitlePageProps } from './titleParts';
 import { TitleHero, OverviewBlock, SeasonsBlock } from './TitleHero';
 import { DetailsCard, LinksCard, YouCard } from './RailCards';
@@ -18,6 +19,24 @@ export function TitlePageBody({ titleData, onWatchTrailer, onPlayVideo, playing,
   const reviews = useTitleReviews(titleData.mediaType, titleData.id);
   // One lookup shared by the hero strip and the alerts in the rail.
   const availability = useTitleAvailability(titleData.mediaType, titleData.id);
+
+  // Remember this title on the device for the sidebar's "jump back in", with
+  // the service it's on right now so the sidebar never has to look it up.
+  const settled = availability.status === 'ready' || availability.status === 'empty';
+  const offer = availability.status === 'ready' ? (availability.stream[0] ?? availability.rentBuy[0] ?? null) : null;
+  useEffect(() => {
+    if (!settled) return;
+    recordRecentTitle({
+      mediaType: titleData.mediaType === 'tv' ? 'tv' : 'movie',
+      id: titleData.id,
+      title: titleData.details.title,
+      posterPath: titleData.details.posterPath,
+      backdropPath: titleData.details.backdropPath,
+      provider: offer ? { name: offer.provider_name, logoPath: offer.logo_path, access: offer.access[0] } : null,
+    });
+    // Once per title, when its availability settles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled, titleData.id]);
 
   return (
     <div className="w-full">

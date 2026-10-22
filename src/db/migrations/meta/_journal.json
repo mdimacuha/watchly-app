@@ -302,6 +302,13 @@
       "when": 1792589193160,
       "tag": "0042_profile_likes",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792660720121,
+      "tag": "0043_sidebar_settings",
+      "breakpoints": true
     }
   ]
 }

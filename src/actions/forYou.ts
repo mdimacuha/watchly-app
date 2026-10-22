@@ -16,6 +16,7 @@ import { markAsWatched } from '@/services/watched';
 import { revalidatePath } from 'next/cache';
 import { getForYouPool, type ForYouPool } from '@/services/forYou/pool';
 import { getReelPage, type ReelItem } from '@/services/forYou/reel';
+import { getSidebarTonight, type SidebarTonight } from '@/services/forYou/tonight';
 
 async function resolveRegion(userId: string): Promise<string> {
   // Same priority as the rest of the app: cookie → DB pref → 'US'.
@@ -105,4 +106,12 @@ export async function getReelPageAction(input: unknown = {}): Promise<{ items: R
   const session = await getSession();
   if (!session) throw new UnauthorizedAppError();
   return getReelPage(session.userId, input);
+}
+
+/** The sidebar's Tonight ticket (a small slice of the cached Programme pool). */
+export async function getSidebarTonightAction(): Promise<SidebarTonight> {
+  const session = await getSession();
+  if (!session) throw new UnauthorizedAppError();
+  const region = await resolveRegion(session.userId);
+  return getSidebarTonight(session.userId, region);
 }

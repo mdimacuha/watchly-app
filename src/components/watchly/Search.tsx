@@ -75,7 +75,7 @@ export function WatchlySearch({
       onSubmit(query);
     } else {
       // Default behavior: navigate to search page
-      router.push(`/search?q=${encodeURIComponent(query)}`);
+      router.push(`/discover?q=${encodeURIComponent(query)}`);
     }
   };
 

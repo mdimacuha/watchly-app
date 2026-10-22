@@ -90,16 +90,20 @@ export default async function CollectionPage({
           fallbackHref="/programme"
           className="absolute top-4 left-4 md:top-6 md:left-6 z-20 rounded-full bg-background/70 hover:bg-background/90 backdrop-blur-sm border border-border/60 px-3 py-1.5 shadow-sm"
         />
-        {collection.backdropPath && (
-          <Image
-            src={buildImageUrl(collection.backdropPath, 'original') || ''}
-            alt={collection.name}
-            fill
-            className="object-cover opacity-50"
-            priority
-          />
-        )}
-        <div className="absolute inset-0 bg-linear-to-t from-background via-background/60 to-transparent" />
+        {/* Under the floating sidebar the backdrop runs to the screen edge,
+            so the translucent panel sits on it instead of a blank strip. */}
+        <div className="absolute inset-0 md:-left-(--float-bleed)">
+          {collection.backdropPath && (
+            <Image
+              src={buildImageUrl(collection.backdropPath, 'original') || ''}
+              alt={collection.name}
+              fill
+              className="object-cover opacity-50"
+              priority
+            />
+          )}
+          <div className="absolute inset-0 bg-linear-to-t from-background via-background/60 to-transparent" />
+        </div>
 
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-12">
           <h1 className="text-3xl md:text-5xl font-bold mb-4">

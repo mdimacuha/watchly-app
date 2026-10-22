@@ -310,6 +310,11 @@ export const userPreferences = pgTable(
     // space can grow (e.g. a future 'auto-dim-after-9pm') without a migration.
     theme: text('theme'),
 
+    // Settings › Sidebar (Tonight's parts, docked/floating and its options).
+    // jsonb, validated in the settings service; null = defaults. Devices keep
+    // a copy so the sidebar never waits on this.
+    sidebarSettings: jsonb('sidebar_settings'),
+
     // Per-channel notification opt-in/out. jsonb so the value space can
     // grow without a migration each time we add an event kind. Missing
     // keys default to true (opted-in) at read time.

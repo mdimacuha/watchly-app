@@ -17,7 +17,7 @@ export function GenresTab({ genres, mediaType = "movie" }: GenresTabProps) {
       {genres.map((genre) => (
         <Link
           key={genre.id}
-          href={`/search?genre=${genre.id}&type=${mediaType}`}
+          href={`/discover?genre=${genre.id}&type=${mediaType}`}
           aria-label={`Search ${genre.name} ${mediaType === "tv" ? "shows" : "movies"}`}
           className="px-4 py-2 rounded-full bg-secondary/30 text-secondary-foreground border border-white/5 hover:bg-secondary/50 hover:text-foreground transition-colors text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >

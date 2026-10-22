@@ -355,7 +355,7 @@ function EndCap({ line, deeperHref }: { line: string; deeperHref?: string }) {
             <Layers className="h-4 w-4" /> Go deeper
           </Link>
         )}
-        <Link href="/search" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium hover:bg-foreground/5">
+        <Link href="/discover" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium hover:bg-foreground/5">
           <Search className="h-4 w-4" /> Search
         </Link>
       </div>

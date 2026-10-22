@@ -17,6 +17,10 @@ type ResolvedTheme = 'dark' | 'light';
 // fresh signin; localStorage takes over once React syncs on mount).
 export const THEME_STORAGE_KEY = 'watchly_theme';
 
+// Light mode is switched off until it's fixed: everyone gets dark, whatever
+// they saved (saved choices are kept, so turning this back on restores them).
+export const LIGHT_MODE_ENABLED = false;
+
 interface ThemeContextValue {
   theme: Theme;
   resolved: ResolvedTheme;
@@ -44,6 +48,7 @@ function readStoredTheme(): Theme {
 }
 
 function resolveTheme(theme: Theme): ResolvedTheme {
+  if (!LIGHT_MODE_ENABLED) return 'dark';
   if (theme !== 'system') return theme;
   if (typeof window === 'undefined') return 'dark';
   return window.matchMedia('(prefers-color-scheme: light)').matches
@@ -96,7 +101,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // When in 'system' mode, follow OS-level changes live.
   useEffect(() => {
-    if (theme !== 'system') return;
+    if (theme !== 'system' || !LIGHT_MODE_ENABLED) return;
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => {
       const next: ResolvedTheme = mq.matches ? 'light' : 'dark';
@@ -145,4 +150,6 @@ export function useTheme(): ThemeContextValue {
  * The string is rendered with `dangerouslySetInnerHTML` from the root
  * layout. Keep it terse — every character ships on every page.
  */
-export const THEME_INIT_SCRIPT = `(function(){try{var m=document.cookie.match(/(?:^|;\\s*)${THEME_STORAGE_KEY}=([^;]+)/);var c=m?decodeURIComponent(m[1]):null;var s=(c==='light'||c==='dark'||c==='system')?c:localStorage.getItem('${THEME_STORAGE_KEY}');var t=s==='light'||s==='dark'||s==='system'?s:'dark';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;var cl=document.documentElement.classList;cl.toggle('light',r==='light');cl.toggle('dark',r==='dark');}catch(e){document.documentElement.classList.add('dark');}})();`;
+export const THEME_INIT_SCRIPT = !LIGHT_MODE_ENABLED
+  ? `(function(){var cl=document.documentElement.classList;cl.remove('light');cl.add('dark');})();`
+  : `(function(){try{var m=document.cookie.match(/(?:^|;\\s*)${THEME_STORAGE_KEY}=([^;]+)/);var c=m?decodeURIComponent(m[1]):null;var s=(c==='light'||c==='dark'||c==='system')?c:localStorage.getItem('${THEME_STORAGE_KEY}');var t=s==='light'||s==='dark'||s==='system'?s:'dark';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;var cl=document.documentElement.classList;cl.toggle('light',r==='light');cl.toggle('dark',r==='dark');}catch(e){document.documentElement.classList.add('dark');}})();`;

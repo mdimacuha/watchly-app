@@ -2,14 +2,19 @@
 
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useUIStore } from '@/client/stores/ui';
+import { FLOAT_GAP_PX, useSidebarPrefs, useSidebarPrefsSync } from '@/client/sidebarPrefs';
+import { useAuthStore } from '@/client/stores/auth';
+import { cn } from '@/lib/cn';
 import {
   AppSidebar,
   SIDEBAR_WIDTH_EXPANDED,
   SIDEBAR_WIDTH_COLLAPSED,
+  SIDEBAR_FLOAT_OPEN,
+  SIDEBAR_FLOAT_RAIL,
 } from './AppSidebar';
 import { TopBarBack } from './TopBarBack';
 import { ToastProvider } from '@/components/toast/ToastProvider';
@@ -50,6 +55,9 @@ export function AuthenticatedShell({
   } = useUIStore();
 
   const focused = isFocusedRoute(pathname);
+  const prefs = useSidebarPrefs();
+  useSidebarPrefsSync(useAuthStore((st) => st.user?.id));
+  const reduceMotion = useReducedMotion();
 
   // Desktop: start expanded. Mobile: start collapsed.
   useEffect(() => {
@@ -80,9 +88,15 @@ export function AuthenticatedShell({
     );
   }
 
-  const sidebarWidth = isSidebarExpanded
-    ? SIDEBAR_WIDTH_EXPANDED
-    : SIDEBAR_WIDTH_COLLAPSED;
+  // Settings › Sidebar: docked to the edge, or (experimental) floating off it.
+  const floating = prefs.style === 'floating';
+  const gap = FLOAT_GAP_PX[prefs.gap];
+  const sidebarWidth = floating
+    ? // Pinned keeps the panel's width; otherwise only the rail's (it opens over the page).
+      gap * 2 + (prefs.pinned ? SIDEBAR_FLOAT_OPEN : SIDEBAR_FLOAT_RAIL)
+    : isSidebarExpanded
+      ? SIDEBAR_WIDTH_EXPANDED
+      : SIDEBAR_WIDTH_COLLAPSED;
 
   // ----- Sidebar mode (default) -----
   // The page renders ONCE for every screen size: the phone top bar is
@@ -92,9 +106,19 @@ export function AuthenticatedShell({
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* ===== Desktop sidebar (always in DOM, animates width) ===== */}
-      <div className="hidden md:block fixed inset-y-0 left-0 z-50">
-        <AppSidebar collapsed={!isSidebarExpanded} />
-      </div>
+      {floating ? (
+        // Floating: off the edge by the chosen gap on every side.
+        <div className="hidden md:block fixed z-50" style={{ top: gap, bottom: gap, left: gap }}>
+          <AppSidebar
+            collapsed={!isSidebarExpanded}
+            floating={{ translucent: prefs.translucent, fluid: prefs.fluid && !reduceMotion }}
+          />
+        </div>
+      ) : (
+        <div className="hidden md:block fixed inset-y-0 left-0 z-50">
+          <AppSidebar collapsed={!isSidebarExpanded} />
+        </div>
+      )}
 
       {/* ===== Phone top bar =====
            A centred bar + a full-viewport nav screen when opened — no
@@ -145,8 +169,8 @@ export function AuthenticatedShell({
            never widens the page (that drags fixed popups off-screen); clip,
            not hidden, keeps sticky working. */}
       <motion.div
-        className="flex flex-1 flex-col max-md:overflow-x-clip md:ml-(--sidebar-w)"
-        style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
+        className={cn('flex flex-1 flex-col max-md:overflow-x-clip', floating ? 'md:pl-(--sidebar-w)' : 'md:ml-(--sidebar-w)')}
+        style={{ '--sidebar-w': `${sidebarWidth}px`, '--float-bleed': floating ? 'var(--sidebar-w)' : '0px' } as React.CSSProperties}
         animate={{ '--sidebar-w': `${sidebarWidth}px` } as Record<string, string>}
         transition={sidebarSpring}
       >

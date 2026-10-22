@@ -102,7 +102,7 @@ export function TitleHeader({
         {details.genres.map((g) => (
           <Link
             key={g.id}
-            href={`/search?genre=${g.id}&type=${mediaType}`}
+            href={`/discover?genre=${g.id}&type=${mediaType}`}
             className="px-3 py-1 rounded-sm bg-secondary text-xs font-semibold text-foreground hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {g.name}

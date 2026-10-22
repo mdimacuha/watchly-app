@@ -60,7 +60,7 @@ export function SwipeEmptyState({ reason, onRefresh }: SwipeEmptyStateProps) {
           {reason === 'error' ? 'Try again' : 'Refresh'}
         </Button>
         <Button asChild>
-          <Link href="/search" className="gap-2 inline-flex items-center">
+          <Link href="/discover" className="gap-2 inline-flex items-center">
             <Search className="w-4 h-4" />
             Find something
           </Link>

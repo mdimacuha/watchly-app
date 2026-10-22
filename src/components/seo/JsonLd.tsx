@@ -20,7 +20,7 @@ export function JsonLd({ data }: { data: Record<string, unknown> }) {
 /**
  * Site-wide WebSite + WebApplication + Organization graph. Includes a
  * SearchAction so Google can surface a sitelinks search box pointing at
- * `/search?q=`.
+ * `/discover?q=`.
  */
 export function WebsiteJsonLd() {
   return (
@@ -39,7 +39,7 @@ export function WebsiteJsonLd() {
               '@type': 'SearchAction',
               target: {
                 '@type': 'EntryPoint',
-                urlTemplate: `${SITE_URL}/search?q={search_term_string}`,
+                urlTemplate: `${SITE_URL}/discover?q={search_term_string}`,
               },
               'query-input': 'required name=search_term_string',
             },

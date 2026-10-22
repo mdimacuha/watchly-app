@@ -29,3 +29,8 @@ export function trackForYou(
 ) {
   track({ event, titleKey, metadata });
 }
+
+/** Deliver queued events right away (the tab is being hidden or closed). */
+export function flushForYou() {
+  track.flushNow();
+}

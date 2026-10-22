@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { useUIStore } from '@/client/stores/ui';
 import { useToast } from '@/hooks/useToast';
-import { trackForYou } from '@/client/forYouEvents';
+import { flushForYou, trackForYou } from '@/client/forYouEvents';
 import { AddToWatchlistPicker } from '@/components/watchlists/AddToWatchlistPicker';
 import { EmptyState } from '@/components/watchly/EmptyState';
 import { recordSwipeAction, undoSwipeAction } from '@/actions/swipe';
@@ -46,7 +46,8 @@ export interface ReelCardProps {
   hint: boolean;
 }
 
-const PREFETCH_WHEN_REMAINING = 3;
+/** Start finding more while this many titles are still ahead, so the next page is ready first. */
+const PREFETCH_WHEN_AHEAD = 4;
 /** Trailers start with sound at half volume (muted if the browser refuses). */
 const DEFAULT_VOLUME = 50;
 const VOLUME_KEY = 'watchly.reel.volume';
@@ -87,7 +88,7 @@ const subscribeVolume = (cb: () => void) => {
   return () => volumeListeners.delete(cb);
 };
 
-export function ReelFeed({ initial }: { initial: ReelItem[] }) {
+export function ReelFeed({ initial, seed }: { initial: ReelItem[]; seed: string }) {
   const toast = useToast();
   const quickViewOpen = useUIStore((s) => s.quickView !== null);
   const reducedMotion = useSyncExternalStore(
@@ -130,24 +131,37 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
     trackForYou('feed_viewed', undefined, { surface: 'reel', count: initial.length });
   }, [initial.length]);
 
-  // One item_viewed per title, with how long it was on screen.
-  const viewStart = useRef({ index: 0, at: 0 });
+  // One item_viewed per title, with how long it was on screen. The server
+  // rests viewed titles for a while, so a refresh doesn't replay them.
+  const viewStart = useRef({ index: 0, at: 0, logged: false });
   useEffect(() => {
     const prev = viewStart.current;
     const prevItem = items[prev.index];
-    if (prev.at && prevItem && prev.index !== active) {
-      trackForYou('item_viewed', prevItem.key, {
-        surface: 'reel',
-        position: prev.index,
-        dwellMs: Date.now() - prev.at,
-        reason: prevItem.reason,
-        videoType: prevItem.video.type,
-      });
-    }
-    viewStart.current = { index: active, at: Date.now() };
+    if (prev.at && prevItem && prev.index !== active && !prev.logged) logView(prevItem, prev.index, prev.at);
+    viewStart.current = { index: active, at: Date.now(), logged: false };
     // Only the active index matters; items is read for the outgoing title.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Leaving the page (refresh, tab switch, close) counts the title on screen
+  // too, sent straight away so it's recorded before the next visit loads.
+  useEffect(() => {
+    const onHide = (e: Event) => {
+      if (e.type === 'visibilitychange' && document.visibilityState !== 'hidden') return;
+      const cur = viewStart.current;
+      const item = items[cur.index];
+      if (!item || !cur.at || cur.logged) return;
+      logView(item, cur.index, cur.at);
+      viewStart.current = { ...cur, logged: true };
+      flushForYou();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onHide);
+    };
+  }, [items]);
 
   // Active card = the one at least 60% on screen (YouTube: autoplay only when
   // more than half the player is visible). Cards are sticky-stacked, so the
@@ -167,15 +181,18 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
     return () => io.disconnect();
   }, [items.length, loading, done]);
 
-  // Page in more when few remain, skipping what this visit has shown and
-  // leading with reasons we haven't just seen.
+  // Page in more when few remain, with this visit's seed, skipping what this
+  // visit has shown and leading with reasons we haven't just seen.
   const loadingRef = useRef(false);
+  const pagesLoaded = useRef(1);
   useEffect(() => {
-    if (done || loadingRef.current || items.length - active > PREFETCH_WHEN_REMAINING) return;
+    if (done || loadingRef.current || items.length - 1 - active > PREFETCH_WHEN_AHEAD) return;
     loadingRef.current = true;
     setLoading(true);
     getReelPageAction({
-      exclude: [...shownKeys.current],
+      seed,
+      page: pagesLoaded.current++,
+      exclude: [...shownKeys.current].slice(-500),
       recentReasons: items.slice(-RECENT_REASONS).map((i) => i.reason),
     })
       .then(({ items: more }) => {
@@ -189,7 +206,7 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
         loadingRef.current = false;
         setLoading(false);
       });
-  }, [active, items, done]);
+  }, [active, items, done, seed]);
 
   const goTo = useCallback(
     (i: number) => {
@@ -212,7 +229,7 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
       return;
     }
     setLiked((cur) => ({ ...cur, [item.key]: 'pending' }));
-    trackForYou('committed', item.key, { surface: 'reel', kind: 'like', position, reason: item.reason, via });
+    trackForYou('committed', item.key, { surface: 'reel', kind: 'like', position, reason: item.reason, bucket: item.bucket, via });
     recordSwipeAction({ tmdbId: item.tmdbId, mediaType: item.mediaType, action: 'liked', source: 'reel' })
       .then((r) => setLiked((cur) => (item.key in cur ? { ...cur, [item.key]: r.swipeId } : cur)))
       .catch(() => {
@@ -248,7 +265,7 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
 
   // A video that won't embed leaves the reel; the next title slides into place.
   const dropItem = (item: ReelItem, position: number) => {
-    trackForYou('video_unavailable', item.key, { surface: 'reel', position, videoKey: item.video.key });
+    trackForYou('video_unavailable', item.key, { surface: 'reel', position, bucket: item.bucket, videoKey: item.video.key });
     setItems((cur) => cur.filter((i) => i.key !== item.key));
   };
 
@@ -274,7 +291,10 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
   }
 
   return (
-    <div className="relative isolate flex h-[calc(100dvh-3.5rem)] items-center justify-center overflow-hidden md:h-dvh">
+    // Under the floating sidebar the dimmed surround runs to the screen edge
+    // (the card stays centred in what's left), so the translucent panel sits
+    // on the film's colours instead of a blank strip.
+    <div className="relative isolate flex h-[calc(100dvh-3.5rem)] items-center justify-center overflow-hidden md:h-dvh md:-ml-(--float-bleed) md:pl-(--float-bleed)">
       <Surround item={items[Math.min(active, items.length - 1)]} still={reducedMotion} />
       {/* The card: a vertical rectangle on desktop, the whole screen on phones. */}
       <div className="relative h-full w-full md:aspect-[9/16] md:h-[calc(100dvh-2rem)] md:w-auto">
@@ -332,7 +352,7 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
                       setPicker(item);
                     }}
                     onVideoError={() => dropItem(item, i)}
-                    onDetailsOpened={() => trackForYou('details_opened', item.key, { surface: 'reel', position: i })}
+                    onDetailsOpened={() => trackForYou('details_opened', item.key, { surface: 'reel', position: i, bucket: item.bucket })}
                     hint={i === 0 && !moved}
                   />
                 </div>
@@ -385,7 +405,13 @@ export function ReelFeed({ initial }: { initial: ReelItem[] }) {
             // The picker reports membership once when its lists load, then
             // again after a confirmed add; only the second is a commit.
             if (pickerReported.current && yes) {
-              trackForYou('committed', picker.key, { surface: 'reel', kind: 'watchlist_add', reason: picker.reason });
+              trackForYou('committed', picker.key, {
+                surface: 'reel',
+                kind: 'watchlist_add',
+                position: items.findIndex((i) => i.key === picker.key),
+                reason: picker.reason,
+                bucket: picker.bucket,
+              });
             }
             pickerReported.current = true;
             if (yes !== inList.has(picker.key)) {
@@ -472,6 +498,17 @@ function NavButton({
       {children}
     </button>
   );
+}
+
+function logView(item: ReelItem, position: number, since: number) {
+  trackForYou('item_viewed', item.key, {
+    surface: 'reel',
+    position,
+    dwellMs: Date.now() - since,
+    reason: item.reason,
+    bucket: item.bucket,
+    videoType: item.video.type,
+  });
 }
 
 function without(rec: Record<string, string>, key: string): Record<string, string> {

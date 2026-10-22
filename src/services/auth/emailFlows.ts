@@ -154,7 +154,7 @@ export async function sendWelcomeEmail(userId: string): Promise<void> {
     subject: 'Welcome to Watchly',
     template: WelcomeEmail({
       recipientName: contact.firstName,
-      searchUrl: `${appUrl()}/search`,
+      searchUrl: `${appUrl()}/discover`,
     }),
   });
 }

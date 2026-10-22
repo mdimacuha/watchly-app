@@ -7,6 +7,8 @@ export default async function ForYouPage() {
   // Validates the session against the DB so a stale cookie redirects to
   // /signin cleanly.
   const userId = await requireUser();
-  const { items } = await getReelPage(userId);
-  return <ReelFeed initial={items} />;
+  // Each visit gets its own shuffle; the client sends it back for later pages.
+  const seed = crypto.randomUUID();
+  const { items } = await getReelPage(userId, { seed });
+  return <ReelFeed initial={items} seed={seed} />;
 }

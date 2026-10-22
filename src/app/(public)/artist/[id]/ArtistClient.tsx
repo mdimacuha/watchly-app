@@ -53,7 +53,8 @@ export function ArtistClient({ payload }: ArtistClientProps) {
       {/* Header Section */}
       <div className="relative w-full">
         {/* Background gradient/image could go here */}
-        <div className="absolute inset-0 bg-linear-to-b from-primary/5 to-background z-0" />
+        {/* Runs under the floating sidebar too, so the tint has no seam. */}
+        <div className="absolute inset-0 z-0 bg-linear-to-b from-primary/5 to-background md:-left-(--float-bleed)" />
 
         <div className="container relative z-10 px-4 pt-24 pb-12 mx-auto">
           <BackLink fallbackHref="/programme" className="mb-8" />

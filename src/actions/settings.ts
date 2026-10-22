@@ -17,6 +17,9 @@ import {
   changePassword,
   deleteAccount,
   updateTheme,
+  getSidebarSettings,
+  updateSidebarSettings,
+  type SidebarSettings,
   type UpdatePrivacyInput,
   type ChangeEmailInput,
   type ChangePasswordInput,
@@ -56,6 +59,19 @@ export async function updateThemeAction(theme: Theme): Promise<void> {
   // newly-signed-in device picks up the latest choice without waiting for
   // localStorage to be hydrated by an earlier session.
   await setThemeCookie(theme);
+}
+
+/** Settings › Sidebar, saved to the account (null = never set). */
+export async function getSidebarSettingsAction(): Promise<SidebarSettings | null> {
+  const session = await getSession();
+  if (!session) return null;
+  return getSidebarSettings(session.userId);
+}
+
+/** Merges a change into the saved sidebar settings; input is validated in the service. */
+export async function updateSidebarSettingsAction(patch: unknown): Promise<SidebarSettings> {
+  const userId = await requireUserId();
+  return updateSidebarSettings(userId, patch);
 }
 
 export async function changeEmailAction(input: ChangeEmailInput) {

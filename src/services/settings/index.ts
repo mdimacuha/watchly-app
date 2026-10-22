@@ -74,6 +74,53 @@ export async function updatePrivacy(userId: string, input: UpdatePrivacyInput) {
 }
 
 // ---------------------------------------------------------------------------
+// Sidebar (Settings › Sidebar)
+// ---------------------------------------------------------------------------
+
+export const sidebarSettingsSchema = z
+  .object({
+    tonight: z.enum(['both', 'feature', 'ticket', 'off']),
+    style: z.enum(['docked', 'floating']),
+    translucent: z.boolean(),
+    fluid: z.boolean(),
+    gap: z.enum(['snug', 'roomy']),
+    pinned: z.boolean(),
+  })
+  .partial()
+  .strict();
+
+export type SidebarSettings = z.infer<typeof sidebarSettingsSchema>;
+
+/** The saved sidebar settings, or null when never set (the client uses its defaults). */
+export async function getSidebarSettings(userId: string): Promise<SidebarSettings | null> {
+  const [row] = await db
+    .select({ sidebarSettings: userPreferences.sidebarSettings })
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .limit(1);
+  // Stored values are re-validated: drop anything a past version wrote that no longer fits.
+  const parsed = sidebarSettingsSchema.strip().safeParse(row?.sidebarSettings ?? null);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Merges a change into the saved settings (creating the preferences row if missing). */
+export async function updateSidebarSettings(userId: string, patch: unknown): Promise<SidebarSettings> {
+  const parsed = sidebarSettingsSchema.safeParse(patch);
+  if (!parsed.success) {
+    throw new ValidationAppError('Invalid sidebar settings', parsed.error.flatten());
+  }
+  const next = { ...((await getSidebarSettings(userId)) ?? {}), ...parsed.data };
+  await db
+    .insert(userPreferences)
+    .values({ userId, sidebarSettings: next })
+    .onConflictDoUpdate({
+      target: userPreferences.userId,
+      set: { sidebarSettings: next, updatedAt: new Date() },
+    });
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Appearance / theme
 // ---------------------------------------------------------------------------
 

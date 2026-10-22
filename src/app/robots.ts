@@ -55,6 +55,7 @@ const DISALLOW_FROM_SEARCH = [
   '/restore-account',
   // Thin/duplicate + dev-only
   '/search',
+  '/discover',
   '/debug',
   '/docs',
 ];
