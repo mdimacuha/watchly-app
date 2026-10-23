@@ -40,9 +40,11 @@ export const tv = {
   aggregateCredits: (id: number) => tmdbFetch<any>(`/tv/${id}/aggregate_credits`),
   contentRatings: (id: number) => tmdbFetch<any>(`/tv/${id}/content_ratings`),
   credits: (id: number) => tmdbFetch<any>(`/tv/${id}/credits`),
-  images: (id: number) =>
+  /** `imageLanguage` (e.g. "null,en") trims the response to those languages. */
+  images: (id: number, imageLanguage?: string) =>
     tmdbFetch<{ backdrops: TmdbImage[]; posters: TmdbImage[] }>(
-      `/tv/${id}/images`
+      `/tv/${id}/images`,
+      { include_image_language: imageLanguage }
     ),
   keywords: (id: number) =>
     tmdbFetch<{ id: number; results: { id: number; name: string }[] }>(

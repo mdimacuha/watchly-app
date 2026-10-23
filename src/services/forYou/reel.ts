@@ -335,7 +335,9 @@ async function toReelItem(c: Candidate): Promise<ReelItem | null> {
   const api = c.mediaType === 'movie' ? movie : tv;
   const [videos, images] = await Promise.all([
     api.videos(c.tmdbId).catch(() => null),
-    api.images(c.tmdbId).catch(() => null),
+    // Text-free and English art only: the full set runs to hundreds of KB,
+    // and every byte is a Data Cache write.
+    api.images(c.tmdbId, 'null,en').catch(() => null),
   ]);
   const video = videos ? pickVideo(videos.results) : null;
   // No playable video, no place in the reel.

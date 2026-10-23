@@ -46,9 +46,11 @@ export const movie = {
     ),
   details: (id: number): Promise<MovieDetails> => tmdbFetch<any>(`/movie/${id}`).then(mapMovieDetails),
   credits: (id: number) => tmdbFetch<any>(`/movie/${id}/credits`),
-  images: (id: number) =>
+  /** `imageLanguage` (e.g. "null,en") trims the response to those languages. */
+  images: (id: number, imageLanguage?: string) =>
     tmdbFetch<{ backdrops: TmdbImage[]; posters: TmdbImage[] }>(
-      `/movie/${id}/images`
+      `/movie/${id}/images`,
+      { include_image_language: imageLanguage }
     ),
   keywords: (id: number) =>
     tmdbFetch<{ id: number; keywords: { id: number; name: string }[] }>(

@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
+// Link-unfurlers use their own robots group, so they ignore the `*` disallow.
+import { SOCIAL_PREVIEW_BOTS } from '@/lib/bots';
 
 /**
  * Served at `/robots.txt` for the Watchly APP (app.gowatchly.com).
@@ -58,22 +60,6 @@ const DISALLOW_FROM_SEARCH = [
   '/discover',
   '/debug',
   '/docs',
-];
-
-// Link-unfurlers allowed through so shared links still preview. These bots use
-// their own robots group, so they ignore the `*` disallow above.
-const SOCIAL_PREVIEW_BOTS = [
-  'facebookexternalhit',
-  'Facebot',
-  'Twitterbot',
-  'Slackbot',
-  'Slackbot-LinkExpanding',
-  'Discordbot',
-  'WhatsApp',
-  'LinkedInBot',
-  'TelegramBot',
-  'redditbot',
-  'Pinterest',
 ];
 
 export default function robots(): MetadataRoute.Robots {

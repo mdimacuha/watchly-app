@@ -393,9 +393,12 @@ export async function getTitlePagePayload({
   let ratingPromise: Promise<string | null>;
   let releaseDatesPromise: Promise<TmdbReleaseDates | null> = Promise.resolve(null);
   let contentRatingsPromise: Promise<TmdbContentRatings | null> = Promise.resolve(null);
-  const providersPromise: Promise<TmdbWatchProviders> = tmdbFetch<TmdbWatchProviders>(
-    `/${mediaType}/${numericId}/watch/providers`
-  );
+  // Every region's providers in one large response — only needed when a region
+  // is asked for. The region-agnostic ISR render skips it, so a crawl doesn't
+  // write it to the Data Cache for every title.
+  const providersPromise: Promise<TmdbWatchProviders> = region
+    ? tmdbFetch<TmdbWatchProviders>(`/${mediaType}/${numericId}/watch/providers`)
+    : Promise.resolve({ id: numericId, results: {} } as TmdbWatchProviders);
   const altTitlesPromise: Promise<TmdbAlternativeTitles> = tmdbFetch<TmdbAlternativeTitles>(
     `/${mediaType}/${numericId}/alternative_titles`
   );
