@@ -2,7 +2,7 @@ import 'server-only';
 
 import { db } from '@/db';
 import { titleSwipeEvents, titleSwipes } from '@/db/schema';
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne } from 'drizzle-orm';
 import { addFavorite, removeFavorite } from '@/services/favorites';
 import { staleForYouPool } from '@/services/forYou/cacheTag';
 import { tmdbFetch } from '@/server/tmdb/client';
@@ -289,7 +289,8 @@ export async function getSwipeHistory(
     SWIPE_HISTORY_MAX_LIMIT,
   );
 
-  const conditions = [eq(titleSwipes.userId, userId)];
+  // Onboarding picks are signup seeds, not swipes: they live on the Likes tab.
+  const conditions = [eq(titleSwipes.userId, userId), ne(titleSwipes.source, 'onboarding')];
   if (opts.action) conditions.push(eq(titleSwipes.action, opts.action));
   // Ordered + paged by the LATEST decision (updatedAt), so a title whose
   // verdict changed (re-swiped, or changed from History) moves to the top
@@ -346,7 +347,8 @@ export async function getSwipeHistory(
 export async function resetSwipeHistory(userId: string): Promise<number> {
   const deleted = await db
     .delete(titleSwipes)
-    .where(eq(titleSwipes.userId, userId))
+    // Onboarding picks aren't in Swipe history, so reset leaves them alone.
+    .where(and(eq(titleSwipes.userId, userId), ne(titleSwipes.source, 'onboarding')))
     .returning({ id: titleSwipes.id });
   staleForYouPool(userId);
   return deleted.length;

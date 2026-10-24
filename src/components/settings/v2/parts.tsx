@@ -153,9 +153,9 @@ export function PrivacyControls({ s }: { s: SettingsState }) {
         value={p.watchlistsVisibility}
         onChange={(v) => s.updatePrivacy({ watchlistsVisibility: v })}
         sentences={{
-          public: 'Lists you mark public show on your profile.',
-          followers_only: 'Lists you mark public show to accepted followers only.',
-          private: 'No lists show on your profile, whatever each list is set to.',
+          public: "Lists you mark public show on your profile. Anyone with a public list's link can open it.",
+          followers_only: "Lists you mark public show on your profile to accepted followers only. A public list's link still opens for anyone who has it.",
+          private: 'No lists show on your profile. A list you mark public can still be opened by anyone with its link.',
         }}
       />
       <div className="divide-y divide-border border-y border-border">

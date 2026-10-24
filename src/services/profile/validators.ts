@@ -27,6 +27,9 @@ export const cardFeatureSchema = z
 
 export const updateProfileSchema = z.object({
   displayName: z.string().min(1).max(50),
+  // Real name on the account row (onboarding's name step). Omitted = untouched.
+  firstName: z.string().max(50).transform((v) => v.trim()).optional(),
+  lastName: z.string().max(50).transform((v) => v.trim()).optional(),
   bio: z.string().max(160).optional(),
   avatarUrl: z.string().url().optional().or(z.literal('')),
   accentColor: accentColorSchema.optional(),

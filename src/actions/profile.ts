@@ -111,16 +111,23 @@ export async function getProfileShowcaseAction(
         .then((titles) => titles.filter((t): t is NonNullable<typeof t> => t !== null))
     : Promise.resolve([]);
 
+  // The second ticket under the member card: the latest logged watch, under
+  // the same visibility as the watched list (hidden → no ticket at all).
+  const lastWatchedP = canSeeWatched
+    ? Promise.all([ownerWatchedP, import('@/services/watched/lastWatched')]).then(([w, m]) => m.getLastWatchedTicket(w))
+    : Promise.resolve(null);
+
   // Feature presentation picks (shown to everyone who can open the profile).
   const featuredP = import('@/services/profile/featured').then((m) => m.getFeaturedTitles(ownerId));
 
-  const [insights, match, cardFeatureTitle, followSuggestions, pickerFavorites, featured] = await Promise.all([
+  const [insights, match, cardFeatureTitle, followSuggestions, pickerFavorites, featured, lastWatched] = await Promise.all([
     insightsP,
     matchP,
     cardFeatureTitleP,
     followSuggestionsP,
     pickerFavoritesP,
     featuredP,
+    lastWatchedP,
   ]);
 
   return {
@@ -132,6 +139,7 @@ export async function getProfileShowcaseAction(
     pickerFavorites,
     followSuggestions,
     featured,
+    lastWatched,
   };
 }
 

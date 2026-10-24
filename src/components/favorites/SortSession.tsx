@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -15,7 +15,7 @@ const TYPE: Record<Fav['type'], string> = { movie: 'Film', tv: 'Series', collect
 /**
  * Shelve favorites one at a time. Starts with the unshelved ones; at the end
  * offers to keep going through everything (a favorite can sit on more
- * shelves). Keys: 1–9 toggle shelves · Enter / → save + next · S skip ·
+ * shelves). Keys: 1–9 toggle the first nine shelves · Enter / → save + next · S skip ·
  * N new shelf · Esc end.
  */
 export function SortSession({ unshelved, all, f, onClose }: { unshelved: Fav[]; all: Fav[]; f: FoldersApi; onClose: () => void }) {
@@ -78,13 +78,15 @@ export function SortSession({ unshelved, all, f, onClose }: { unshelved: Fav[]; 
   );
 }
 
-/** One favorite: shelf toggles (1–9), save + next (Enter/→), skip (S), new shelf (N). */
+/** One favorite: shelf toggles (1–9 for the first nine; the list scrolls), save + next (Enter/→), skip (S), new shelf (N). */
 function SortCard({ fav, f, onNext }: { fav: Fav; f: FoldersApi; onNext: (changed: boolean) => void }) {
   const key = favKey(fav);
   const initial = f.foldersOf(key);
   const [picks, setPicks] = useState<string[]>(initial);
   const [naming, setNaming] = useState(false);
-  const shelves = f.folders.slice(0, 9);
+  const shelves = f.folders;
+  const listRef = useRef<HTMLOListElement>(null);
+  const [created, setCreated] = useState<string | null>(null);
   const img = buildImageUrl(favImage(fav), 'w500');
 
   const toggle = (id: string) => setPicks((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -94,11 +96,17 @@ function SortCard({ fav, f, onNext }: { fav: Fav; f: FoldersApi; onNext: (change
     onNext(changed && picks.length > 0);
   };
 
+  // A new shelf lands at the bottom of the list: bring it into view.
+  useEffect(() => {
+    if (!created) return;
+    listRef.current?.querySelector(`[data-shelf="${created}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [created, shelves.length]);
+
   useEffect(() => {
     if (naming) return;
     const onKey = (e: KeyboardEvent) => {
       const n = Number(e.key);
-      if (n >= 1 && n <= shelves.length) toggle(shelves[n - 1].id);
+      if (n >= 1 && n <= Math.min(9, shelves.length)) toggle(shelves[n - 1].id);
       else if (e.key === 'Enter' || e.key === 'ArrowRight') {
         e.preventDefault();
         save();
@@ -125,24 +133,30 @@ function SortCard({ fav, f, onNext }: { fav: Fav; f: FoldersApi; onNext: (change
         {shelves.length === 0 ? (
           <p className="text-sm text-muted-foreground">No shelves yet — press N to make the first one.</p>
         ) : (
-          <ol className="flex flex-col gap-1.5" aria-label="Shelves">
+          // Bento: each tile is as wide as its name, and tiles grow to fill their row.
+          <ol ref={listRef} className="-mr-2 flex max-h-72 flex-wrap content-start gap-1.5 overflow-y-auto overscroll-contain pr-2" aria-label="Shelves">
             {shelves.map((s, n) => {
               const on = picks.includes(s.id);
               return (
-                <li key={s.id}>
+                <li key={s.id} data-shelf={s.id} className="flex min-w-0 max-w-full grow">
                   <button
                     type="button"
                     role="checkbox"
                     aria-checked={on}
+                    title={s.name}
                     onClick={() => toggle(s.id)}
                     className={cn(
-                      'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      'flex w-full min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       on ? 'border-primary bg-primary-soft' : 'border-border hover:border-foreground/30',
                     )}
                   >
-                    <kbd className="flex h-5 w-5 items-center justify-center rounded-sm bg-secondary font-mono text-[11px]">{n + 1}</kbd>
-                    <span className="flex-1 truncate">{s.name}</span>
-                    {on && <Check className="h-4 w-4 text-primary" />}
+                    {/* Only the first nine have a number key. */}
+                    {n < 9 && (
+                      <kbd className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-secondary font-mono text-[11px]">{n + 1}</kbd>
+                    )}
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                    {/* Check slot is always reserved so ticking never reflows the grid. */}
+                    <Check className={cn('h-4 w-4 shrink-0 text-primary', !on && 'invisible')} />
                   </button>
                 </li>
               );
@@ -170,6 +184,7 @@ function SortCard({ fav, f, onNext }: { fav: Fav; f: FoldersApi; onNext: (change
           // New shelf is ticked for this favorite; saved on Next like the others.
           const id = f.createFolder(name);
           setPicks((p) => [...p, id]);
+          setCreated(id);
         }}
       />
     </div>

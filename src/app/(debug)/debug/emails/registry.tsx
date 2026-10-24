@@ -16,61 +16,56 @@ import { WelcomeEmail } from '@/server/email/templates/WelcomeEmail';
  * and add a row here.
  */
 
-const PREVIEW_BASE = 'https://watchly.dayonelabs.co';
+// Links show the production origin; the wordmark loads from this server so
+// the preview works before a deploy.
+const PREVIEW_BASE = 'https://app.gowatchly.com';
+const ASSET_BASE = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
+const site = { siteUrl: PREVIEW_BASE, assetUrl: ASSET_BASE };
 
 export interface EmailPreviewEntry {
   slug: string;
   name: string;
+  /** When it's sent and why. */
   description: string;
   subject: string;
   /** Rendered ReactElement using sample data. */
   element: ReactElement;
 }
 
+const deleteOn = new Date(Date.now() + 30 * 86_400_000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
 export const EMAIL_PREVIEWS: EmailPreviewEntry[] = [
+  {
+    slug: 'verify-email',
+    name: 'Confirm your email',
+    description: 'The only email at signup, and on resend. Token link, valid 24 hours; unverified accounts pause after the first week.',
+    subject: 'Confirm your Watchly email',
+    element: VerifyEmailEmail({ recipientName: null, verifyUrl: `${PREVIEW_BASE}/verify-email?token=preview_token_abc123`, ...site }),
+  },
   {
     slug: 'welcome',
     name: 'Welcome',
-    description:
-      'Marketing-style onboarding email fired once on signup, alongside the verify email.',
-    subject: 'Welcome to Watchly',
+    description: 'Sent once, the moment the email is confirmed. One button: Tonight’s Programme (UTM-tagged).',
+    subject: 'You’re in. Tonight’s Programme is ready',
     element: WelcomeEmail({
       recipientName: 'Marc',
-      searchUrl: `${PREVIEW_BASE}/discover`,
-    }),
-  },
-  {
-    slug: 'verify-email',
-    name: 'Verify email',
-    description:
-      'Transactional: sent on signup + on resend. Token-bearing link expires in 24h.',
-    subject: 'Verify your Watchly email',
-    element: VerifyEmailEmail({
-      recipientName: 'Marc',
-      verifyUrl: `${PREVIEW_BASE}/verify-email?token=preview_token_abc123`,
+      programmeUrl: `${PREVIEW_BASE}/programme?utm_source=email&utm_medium=email&utm_campaign=welcome`,
+      ...site,
     }),
   },
   {
     slug: 'password-reset',
-    name: 'Password reset',
-    description:
-      'Transactional: sent on /forgot-password. Always-200 endpoint, no-enumeration.',
+    name: 'Reset your password',
+    description: 'Sent from “Forgot your password?”. Always-200 endpoint, no enumeration. Token link, valid 1 hour, single use.',
     subject: 'Reset your Watchly password',
-    element: PasswordResetEmail({
-      recipientName: 'Marc',
-      resetUrl: `${PREVIEW_BASE}/reset-password?token=preview_token_xyz789`,
-    }),
+    element: PasswordResetEmail({ recipientName: 'Marc', resetUrl: `${PREVIEW_BASE}/reset-password?token=preview_token_xyz789`, ...site }),
   },
   {
     slug: 'restore-account',
-    name: 'Restore account',
-    description:
-      'Transactional: sent at account-delete time. 30-day TTL matches the soft-delete window.',
-    subject: 'Restore your Watchly account',
-    element: RestoreAccountEmail({
-      recipientName: 'Marc',
-      restoreUrl: `${PREVIEW_BASE}/restore-account?token=preview_token_restore_42`,
-    }),
+    name: 'Scheduled for deletion',
+    description: 'Sent when deletion is requested. Token link valid for the 30-day soft-delete window; shows the real deletion date.',
+    subject: `Your Watchly account will be deleted on ${deleteOn}`,
+    element: RestoreAccountEmail({ recipientName: 'Marc', restoreUrl: `${PREVIEW_BASE}/restore-account?token=preview_token_restore_42`, deleteOn, ...site }),
   },
 ];
 

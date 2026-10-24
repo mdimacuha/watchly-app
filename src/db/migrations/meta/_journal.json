@@ -309,6 +309,27 @@
       "when": 1792660720121,
       "tag": "0043_sidebar_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792769329751,
+      "tag": "0044_onboarding_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792773694274,
+      "tag": "0045_users_verified_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792795654320,
+      "tag": "0046_watchlist_tidy",
+      "breakpoints": true
     }
   ]
 }

@@ -322,8 +322,8 @@ function ContinueStrip({ items, variant }: { items: ContinueItem[]; variant: str
 function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-h2">{title}</h1>
+      <div className="flex flex-col gap-3">
+        <h1 className="type-display text-6xl text-foreground sm:text-7xl">{title}</h1>
         <p className="text-sm text-muted-foreground">
           Picked from your favorites, watchlists and swipes.
           {children}

@@ -28,18 +28,18 @@ const C = {
 };
 
 // ---------------------------------------------------------------------------
-// Fonts — Geist (+ Mono for kickers) as TTF from Google Fonts. Memoized per
+// Fonts — Geist (+ Mono for kickers, Anton for display titles) as TTF from Google Fonts. Memoized per
 // server instance; on failure Satori's built-in font is used instead.
 // ---------------------------------------------------------------------------
 
 type StoryFont = { name: string; data: ArrayBuffer; weight: 400 | 500 | 600 | 700; style: 'normal' };
 let fontsPromise: Promise<StoryFont[]> | null = null;
 
-function loadFonts(): Promise<StoryFont[]> {
+export function loadFonts(): Promise<StoryFont[]> {
   fontsPromise ??= (async () => {
     // No User-Agent → Google serves TrueType, which Satori can read (not woff2).
     const css = await fetch(
-      'https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&family=Geist+Mono:wght@500',
+      'https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&family=Geist+Mono:wght@500&family=Anton',
     ).then((r) => r.text());
     const faces = [...css.matchAll(/font-family: '([^']+)';[\s\S]*?font-weight: (\d+);[\s\S]*?src: url\(([^)]+)\)/g)];
     return Promise.all(
@@ -59,7 +59,7 @@ function loadFonts(): Promise<StoryFont[]> {
 
 /** The Watchly wordmark (public/brand-light.svg) as a data URI; null → text fallback. */
 let wordmarkPromise: Promise<string | null> | null = null;
-function loadWordmark(): Promise<string | null> {
+export function loadWordmark(): Promise<string | null> {
   wordmarkPromise ??= readFile(path.join(process.cwd(), 'public', 'brand-light.svg'))
     .then((buf) => `data:image/svg+xml;base64,${buf.toString('base64')}`)
     .catch(() => null);

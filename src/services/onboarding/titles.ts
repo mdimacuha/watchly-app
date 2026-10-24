@@ -1,119 +1,102 @@
+import 'server-only';
+
 import { movie, tv, search } from '@/server/tmdb';
 import type { MovieCard, TvCard } from '@/server/tmdb';
 import { buildImageUrl } from '@/lib/tmdb';
+import { ValidationAppError } from '@/utils/errors';
+import { tasteSearchSchema } from './validators';
 
-export type OnboardingTitle = {
+/** A title on the first-run taste step: a poster you can pick. */
+export type TasteTitle = {
+  key: `${'movie' | 'tv'}:${number}`;
   mediaType: 'movie' | 'tv';
-  mediaId: string;
+  id: number;
   title: string;
-  posterUrl: string | null;
-  releaseYear: string | null;
+  year: string | null;
+  poster: string | null;
 };
 
+const fromMovie = (r: MovieCard): TasteTitle => ({
+  key: `movie:${r.id}`,
+  mediaType: 'movie',
+  id: r.id,
+  title: r.title,
+  year: r.releaseDate?.slice(0, 4) || null,
+  poster: buildImageUrl(r.posterPath, 'w342'),
+});
+
+const fromShow = (r: TvCard): TasteTitle => ({
+  key: `tv:${r.id}`,
+  mediaType: 'tv',
+  id: r.id,
+  title: r.name,
+  year: r.firstAirDate?.slice(0, 4) || null,
+  poster: buildImageUrl(r.posterPath, 'w342'),
+});
+
 /**
- * Pulls a small, interleaved set of popular movies + popular TV for the
- * onboarding picker. Two pages each → ~40 movies + ~40 TV, deduped to a
- * 30-item poster grid. We intentionally keep this small: onboarding is a
- * 5-minute step and a too-long list dilutes the seed signal we capture.
+ * The curated row under the taste search: well-loved films and shows beside
+ * what's popular, interleaved so it never opens as a wall of this week's
+ * releases. Vote floors keep barely-rated new titles out of the "loved"
+ * lanes. Search is the main way in; this row is for people who can't name
+ * three titles on the spot.
  */
-export async function getOnboardingPicks(
-  region: string | null,
-): Promise<OnboardingTitle[]> {
-  const [m1, m2, t1, t2] = await Promise.all([
-    movie.popular({ page: 1, region: region ?? undefined }),
-    movie.popular({ page: 2, region: region ?? undefined }),
-    tv.popular({ page: 1, region: region ?? undefined }),
-    tv.popular({ page: 2, region: region ?? undefined }),
+export async function getTasteRow(region: string | null): Promise<TasteTitle[]> {
+  const r = region ?? undefined;
+  const [classics, classics2, popular, tvTop, tvPopular] = await Promise.all([
+    movie.topRated({ page: 1, region: r }).catch(() => null),
+    movie.topRated({ page: 3, region: r }).catch(() => null),
+    movie.popular({ page: 1, region: r }).catch(() => null),
+    tv.topRated({ page: 1, region: r }).catch(() => null),
+    tv.popular({ page: 1, region: r }).catch(() => null),
   ]);
+  const films = (list: typeof classics, minVotes: number) =>
+    (list?.results ?? []).filter((m) => m.posterPath && (m.voteCount ?? 0) >= minVotes).map(fromMovie);
+  const shows = (list: typeof tvTop, minVotes: number) =>
+    (list?.results ?? []).filter((s) => s.posterPath && (s.voteCount ?? 0) >= minVotes).map(fromShow);
+  const lanes = [films(classics, 4000), films(popular, 400), shows(tvTop, 1500), films(classics2, 3000), shows(tvPopular, 300)];
 
-  const movies: OnboardingTitle[] = [...m1.results, ...m2.results]
-    .filter((r) => Boolean(r.posterPath))
-    .map((r) => ({
-      mediaType: 'movie' as const,
-      mediaId: String(r.id),
-      title: r.title,
-      posterUrl: buildImageUrl(r.posterPath, 'w342'),
-      releaseYear: r.releaseDate ? r.releaseDate.slice(0, 4) : null,
-    }));
-
-  const shows: OnboardingTitle[] = [...t1.results, ...t2.results]
-    .filter((r) => Boolean(r.posterPath))
-    .map((r) => ({
-      mediaType: 'tv' as const,
-      mediaId: String(r.id),
-      title: r.name,
-      posterUrl: buildImageUrl(r.posterPath, 'w342'),
-      releaseYear: r.firstAirDate ? r.firstAirDate.slice(0, 4) : null,
-    }));
-
-  // Interleave so the grid alternates movie/tv visually — keeps the
-  // section from feeling like two separate lists stacked.
-  const out: OnboardingTitle[] = [];
-  const max = Math.max(movies.length, shows.length);
-  for (let i = 0; i < max && out.length < 30; i++) {
-    if (movies[i]) out.push(movies[i]);
-    if (shows[i] && out.length < 30) out.push(shows[i]);
+  const seen = new Set<string>();
+  const out: TasteTitle[] = [];
+  for (let i = 0; out.length < 24 && i < 20; i++) {
+    for (const lane of lanes) {
+      const t = lane[i];
+      if (t && !seen.has(t.key) && out.length < 24) {
+        seen.add(t.key);
+        out.push(t);
+      }
+    }
   }
   return out;
 }
 
 /**
- * TMDB-backed search for the onboarding picker. Hits `/search/movie` +
- * `/search/tv` in parallel, normalises each into the shared
- * `OnboardingTitle` shape, then interleaves so movies and shows
- * alternate visually. Returns up to 30 hits — same ceiling as the
- * popular grid, so the UI doesn't shift size when the query clears.
- *
- * Errors are swallowed per side (a TMDB hiccup on the movie endpoint
- * still lets TV results through), and an empty query short-circuits
- * to an empty array — the caller is expected to fall back to
- * `getOnboardingPicks` when there's nothing to search.
+ * TMDB search for the taste step: films and shows in parallel, interleaved.
+ * Errors are swallowed per side so a TMDB hiccup on one still returns the
+ * other; an empty query returns nothing (the client shows the curated row).
  */
-export async function searchOnboardingTitles(
-  query: string,
-  region: string | null,
-): Promise<OnboardingTitle[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
+export async function searchTasteTitles(query: string, region: string | null): Promise<TasteTitle[]> {
+  const q = query.trim();
+  if (!q) return [];
   const [movieResults, tvResults] = await Promise.all([
-    search(trimmed, { type: 'movie', region: region ?? undefined }).catch(
-      () => ({ results: [] }),
-    ),
-    search(trimmed, { type: 'tv', region: region ?? undefined }).catch(
-      () => ({ results: [] }),
-    ),
+    search(q, { type: 'movie', region: region ?? undefined }).catch(() => ({ results: [] })),
+    search(q, { type: 'tv', region: region ?? undefined }).catch(() => ({ results: [] })),
   ]);
+  // search() returns a union; we asked for one type per call.
+  const films = (movieResults.results as MovieCard[]).filter((m) => m.posterPath).map(fromMovie);
+  const shows = (tvResults.results as TvCard[]).filter((s) => s.posterPath).map(fromShow);
 
-  // `search()` returns a SearchResult union (MovieCard | TvCard | …).
-  // We requested type='movie'/'tv' so the runtime shape is known, but
-  // TS can't carry the narrowing through `.filter` chains. Cast the
-  // arrays once via the named card types and map.
-  const movies: OnboardingTitle[] = (movieResults.results as MovieCard[])
-    .filter((r) => Boolean(r.posterPath))
-    .map((r) => ({
-      mediaType: 'movie' as const,
-      mediaId: String(r.id),
-      title: r.title,
-      posterUrl: buildImageUrl(r.posterPath, 'w342'),
-      releaseYear: r.releaseDate ? r.releaseDate.slice(0, 4) : null,
-    }));
-
-  const shows: OnboardingTitle[] = (tvResults.results as TvCard[])
-    .filter((r) => Boolean(r.posterPath))
-    .map((r) => ({
-      mediaType: 'tv' as const,
-      mediaId: String(r.id),
-      title: r.name,
-      posterUrl: buildImageUrl(r.posterPath, 'w342'),
-      releaseYear: r.firstAirDate ? r.firstAirDate.slice(0, 4) : null,
-    }));
-
-  const out: OnboardingTitle[] = [];
-  const max = Math.max(movies.length, shows.length);
-  for (let i = 0; i < max && out.length < 30; i++) {
-    if (movies[i]) out.push(movies[i]);
-    if (shows[i] && out.length < 30) out.push(shows[i]);
+  const out: TasteTitle[] = [];
+  for (let i = 0; i < Math.max(films.length, shows.length) && out.length < 18; i++) {
+    if (films[i]) out.push(films[i]);
+    if (shows[i] && out.length < 18) out.push(shows[i]);
   }
   return out;
+}
+
+/** Taste search from raw query params (the public route's entry point). */
+export async function searchTaste(input: { q: string | null; region: string | null }): Promise<TasteTitle[]> {
+  const parsed = tasteSearchSchema.safeParse(input);
+  if (!parsed.success) throw new ValidationAppError('Invalid search', parsed.error.flatten());
+  return searchTasteTitles(parsed.data.q, parsed.data.region);
 }

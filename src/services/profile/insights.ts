@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, avg, count, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, avg, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { titleSwipes, userFavorites, userReviews, watchlistItems, watchlists } from '@/db/schema';
 import { tmdbFetch } from '@/server/tmdb/client';
@@ -29,7 +29,7 @@ export interface ProfileInsights {
   nowShowing: InsightTitle[];
   /** First "up next" item — "Coming soon" on the marquee. */
   comingSoon: InsightTitle | null;
-  /** Review voice: count, average stars, and their best-rated written review. */
+  /** Review voice: count, average stars, and their latest written review. */
   reviews: {
     count: number;
     average: number | null;
@@ -101,9 +101,15 @@ export async function getProfileInsights(
       })
       .from(userReviews)
       // The featured quote shows on the profile unblurred: no spoilers.
-      .where(and(eq(userReviews.userId, ownerId), eq(userReviews.isSpoiler, false)))
-      .orderBy(desc(userReviews.rating), desc(userReviews.createdAt))
-      .limit(5),
+      .where(
+        and(
+          eq(userReviews.userId, ownerId),
+          eq(userReviews.isSpoiler, false),
+          sql`length(trim(coalesce(${userReviews.body}, ''))) > 0`,
+        ),
+      )
+      .orderBy(desc(userReviews.createdAt))
+      .limit(1),
     db
       .select({ titleId: userReviews.titleId, titleType: userReviews.titleType, rating: userReviews.rating })
       .from(userReviews)
@@ -113,7 +119,8 @@ export async function getProfileInsights(
       ? db
           .select({ action: titleSwipes.action, n: count() })
           .from(titleSwipes)
-          .where(eq(titleSwipes.userId, ownerId))
+          // Onboarding picks are signup seeds, not swipes.
+          .where(and(eq(titleSwipes.userId, ownerId), ne(titleSwipes.source, 'onboarding')))
           .groupBy(titleSwipes.action)
       : Promise.resolve([]),
   ]);

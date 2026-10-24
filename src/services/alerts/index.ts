@@ -5,6 +5,7 @@ import { and, count, desc, eq } from 'drizzle-orm';
 import { tmdbFetch } from '@/server/tmdb/client';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { ValidationAppError } from '@/utils/errors';
+import { invalidateNewFeed } from '@/services/newReleases/cacheTag';
 import { getTitleState } from './titleState';
 import { ALERTS_PER_USER_MAX, alertTitleSchema, setTitleAlertSchema } from './validators';
 
@@ -62,6 +63,7 @@ export async function setTitleAlert(userId: string, input: unknown): Promise<Tit
 
   if (!data.streaming && !data.leaving && !newSeason) {
     await db.delete(titleAlerts).where(where);
+    invalidateNewFeed(userId); // followed shows feed /new
     return NO_ALERT;
   }
 
@@ -96,6 +98,7 @@ export async function setTitleAlert(userId: string, input: unknown): Promise<Tit
         target: [titleAlerts.userId, titleAlerts.mediaType, titleAlerts.mediaId],
         set: { ...flags, ...snapshot },
       });
+    invalidateNewFeed(userId);
   }
 
   return { streaming: data.streaming, leaving: data.leaving, newSeason, region: data.region };
@@ -106,6 +109,7 @@ export async function removeTitleAlert(userId: string, input: unknown): Promise<
   await db
     .delete(titleAlerts)
     .where(and(eq(titleAlerts.userId, userId), eq(titleAlerts.mediaType, mediaType), eq(titleAlerts.mediaId, mediaId)));
+  invalidateNewFeed(userId);
 }
 
 export interface TitleAlertListItem extends TitleAlertSettings {

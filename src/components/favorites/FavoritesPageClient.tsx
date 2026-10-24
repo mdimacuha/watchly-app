@@ -191,6 +191,7 @@ export function FavoritesPageClient({ favorites, shelves }: { favorites: Fav[]; 
         </Button>
       </FavToolbar>
       <ShelfGrid
+        pageKey={`${shelf?.id ?? 'all'}|${v.query}|${v.type}|${v.sort}`}
         items={items}
         v={v}
         f={f}

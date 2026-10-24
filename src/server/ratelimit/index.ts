@@ -205,6 +205,12 @@ export const limiters = {
     count: 120,
     label: 'search-events',
   }),
+  // First-run funnel beacons (guests write on the taste step).
+  onboardingEvents: createLimiter({
+    windowMs: min(1),
+    count: 60,
+    label: 'onboarding-events',
+  }),
   // Search end-cap ("Picked for you instead") — one For You seed pass +
   // up to 24 detail fetches, requested once per settled dead-end search.
   // Own bucket so it never eats into the per-keystroke search budget.

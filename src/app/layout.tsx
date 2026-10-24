@@ -14,6 +14,7 @@ import {
   SITE_DESCRIPTION,
   TITLE_TEMPLATE,
 } from "@/lib/seo";
+import { anton } from "@/lib/fonts";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -110,7 +111,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} antialiased`}
       >
         <ThemeProvider>
           <MaintenanceGate>

@@ -34,7 +34,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-x-clip">
+    <div data-app-shell className="min-h-screen bg-background text-foreground flex flex-col overflow-x-clip">
       <LandingNav />
       <main className="flex-1 pt-22">{children}</main>
       {/* Guests get Quick View too (AuthenticatedShell mounts its own). The

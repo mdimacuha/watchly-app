@@ -6,11 +6,8 @@ const PATHS = {
     FORGOT_PASSWORD: '/forgot-password',
   },
   ONBOARDING: {
-    WELCOME: '/onboarding/welcome',
-    PROFILE: '/onboarding/profile',
-    REGION_AUTO: '/onboarding/region/auto',
-    REGION_MANUAL: '/onboarding/region/manual',
-    TITLES: '/onboarding/titles',
+    // One sheet; it opens at the first entry not answered yet.
+    ROOT: '/onboarding',
   },
   DISCOVER: '/discover',
   NEW: '/new',

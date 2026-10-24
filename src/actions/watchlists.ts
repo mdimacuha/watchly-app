@@ -28,6 +28,10 @@ import {
   type WatchlistItemStatus,
 } from '@/services/watchlists';
 import { enrichWatchlistItems } from '@/services/watchlists/enrich';
+import { dismissAttention, getAttention } from '@/services/watchlists/attention';
+import { applyTidy, undoTidy, type TidyAction, type TidySnapshot } from '@/services/watchlists/tidy';
+import { logWatchlistEvent, recordWatchlistEvent } from '@/services/watchlists/events';
+import { getListRecs } from '@/services/watchlists/recs';
 import { getWatchlistQuickLook, type WatchlistQuickLook } from '@/services/watchlists/quickLook';
 import {
   toggleWatchlistUpvote,
@@ -35,10 +39,6 @@ import {
   type WatchlistVoteState,
   type ToggleVoteResult,
 } from '@/services/watchlists/votes';
-import {
-  getWatchlistRecommendations,
-  type RecommendationItem,
-} from '@/services/tmdb/recommendations';
 import type {
   CreateWatchlistInput,
   UpdateWatchlistInput,
@@ -169,9 +169,12 @@ export async function addToWatchlistAction(
   watchlistId: string,
   mediaType: WatchlistMediaType,
   mediaId: string,
+  /** Where the add came from ('search', 'recs', …), for the adds baseline. */
+  source: string = 'other',
 ) {
   const userId = await requireUserId();
-  await addItem(watchlistId, userId, mediaType, mediaId);
+  const inserted = await addItem(watchlistId, userId, mediaType, mediaId);
+  if (inserted !== null) void logWatchlistEvent(userId, 'title_added', { source: String(source).slice(0, 20), listId: watchlistId });
   revalidatePath(`/watchlists/${watchlistId}`);
   revalidatePath('/watchlists');
 }
@@ -192,34 +195,14 @@ export async function addToWatchlistsAction(
   let added = 0;
   for (const watchlistId of watchlistIds) {
     const inserted = await addItem(watchlistId, userId, mediaType, mediaId);
-    if (inserted !== null) added += 1;
+    if (inserted !== null) {
+      added += 1;
+      void logWatchlistEvent(userId, 'title_added', { source: 'picker', listId: watchlistId });
+    }
     revalidatePath(`/watchlists/${watchlistId}`);
   }
   revalidatePath('/watchlists');
   return added;
-}
-
-/**
- * Discovery payload for the add-titles modal's "Similar" tab: TMDB
- * recommendations seeded from the titles already on this list, with those
- * same titles excluded so nothing suggested is a duplicate add. Derives the
- * seeds server-side from the watchlist (verifying the caller can access it)
- * rather than trusting a client-supplied list. Returns an empty array when the
- * list is empty — the modal renders its own "add a few titles first" state.
- */
-export async function getWatchlistRecommendationsAction(
-  watchlistId: string,
-): Promise<RecommendationItem[]> {
-  const userId = await requireUserId();
-  const { items } = await getWatchlist(watchlistId, userId);
-  if (items.length === 0) return [];
-
-  const seeds = items.map((i) => ({
-    mediaType: i.mediaType,
-    mediaId: i.mediaId,
-  }));
-  const excludeKeys = new Set(items.map((i) => `${i.mediaType}:${i.mediaId}`));
-  return getWatchlistRecommendations(seeds, excludeKeys);
 }
 
 export async function removeFromWatchlistAction(
@@ -302,6 +285,7 @@ export async function addToWatchlistSmartAction(
   if (lists.length === 1) {
     const watchlist = lists[0];
     const inserted = await addItem(watchlist.id, userId, mediaType, mediaId);
+    if (inserted !== null) void logWatchlistEvent(userId, 'title_added', { source: 'quick-add', listId: watchlist.id });
     revalidatePath('/watchlists');
     revalidatePath(`/watchlists/${watchlist.id}`);
     return { mode: 'direct' as const, watchlist, added: inserted !== null };
@@ -324,6 +308,7 @@ export async function addCollectionToWatchlistAction(
 ) {
   const userId = await requireUserId();
   const added = await bulkAddCollectionParts(watchlistId, userId, collectionId);
+  if (added) void logWatchlistEvent(userId, 'title_added', { source: 'collection', listId: watchlistId, count: added });
   revalidatePath(`/watchlists/${watchlistId}`);
   revalidatePath('/watchlists');
   return added;
@@ -345,6 +330,7 @@ export async function addCollectionToWatchlistSmartAction(collectionId: string) 
       userId,
       collectionId,
     );
+    if (added) void logWatchlistEvent(userId, 'title_added', { source: 'collection', listId: watchlist.id, count: added });
     revalidatePath('/watchlists');
     revalidatePath(`/watchlists/${watchlist.id}`);
     return { mode: 'direct' as const, watchlist, added };
@@ -408,4 +394,59 @@ export async function getWatchlistVoteStateAction(
   const session = await getSession();
   const viewerId = session?.userId ?? null;
   return getWatchlistVoteState(viewerId, watchlistId);
+}
+
+/**
+ * What in the owner's lists needs their attention (all lists, or one with
+ * `watchlistId`). Owner-only by construction: reads the session user's own
+ * rows.
+ */
+export async function getAttentionAction(watchlistId?: string) {
+  const userId = await requireUserId();
+  const region = await resolveViewerRegion(userId);
+  return getAttention(userId, region, { watchlistId });
+}
+
+/** Tidy up: one choice on one or more items, in one transaction. Returns the undo snapshot. */
+export async function applyTidyAction(input: { action: TidyAction; itemIds: string[]; kind?: string }): Promise<TidySnapshot> {
+  const userId = await requireUserId();
+  const snapshot = await applyTidy(userId, input);
+  for (const id of new Set(snapshot.rows.map((r) => r.watchlistId))) revalidatePath(`/watchlists/${id}`);
+  revalidatePath('/watchlists');
+  return snapshot;
+}
+
+/** Tidy up: put the rows back as the snapshot had them. */
+export async function undoTidyAction(snapshot: TidySnapshot) {
+  const userId = await requireUserId();
+  const res = await undoTidy(userId, snapshot);
+  for (const id of new Set(snapshot.rows.map((r) => r.watchlistId))) revalidatePath(`/watchlists/${id}`);
+  revalidatePath('/watchlists');
+  return res;
+}
+
+/** Hide the Needs-your-attention strip until its set of things changes. */
+export async function dismissAttentionAction(fingerprint: string) {
+  const userId = await requireUserId();
+  await dismissAttention(userId, String(fingerprint));
+}
+
+/**
+ * More for this list: the owner's picks for one list, made on first open of
+ * the accordion (never before). Logs how many came back and how long it took.
+ */
+export async function getListRecsAction(watchlistId: string, round = 0) {
+  const userId = await requireUserId();
+  const region = await resolveViewerRegion(userId);
+  const r = Number.isInteger(round) && round >= 0 && round <= 30 ? round : 0;
+  const t0 = Date.now();
+  const res = await getListRecs(userId, String(watchlistId), region, r);
+  void logWatchlistEvent(userId, 'recs_shown', { listId: watchlistId, round: r, status: res.status, count: res.status === 'ok' ? res.picks.length : 0, ms: Date.now() - t0 });
+  return res;
+}
+
+/** Page-reported events (strip shown, Tidy up / recs opened). Best-effort. */
+export async function recordWatchlistEventAction(input: { event: 'attention_shown' | 'tidy_opened' | 'recs_opened'; metadata?: Record<string, unknown> }) {
+  const userId = await requireUserId();
+  await recordWatchlistEvent(userId, input);
 }

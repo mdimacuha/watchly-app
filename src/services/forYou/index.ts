@@ -519,9 +519,17 @@ export async function pickSeeds(userId: string): Promise<Seed[]> {
     }
   }
 
+  return buildSeeds(Array.from(stub.values()));
+}
+
+/**
+ * Seeds with scoring features for given titles: details + credits +
+ * keywords in one (1h-cached) call each. Titles that fail to load drop out.
+ */
+export async function buildSeeds(stubs: Pick<Seed, 'tmdbId' | 'mediaType'>[]): Promise<Seed[]> {
   // Pull details + credits + keywords in one call each. 1h-cached.
   const enriched = await Promise.all(
-    Array.from(stub.values()).map(async (s): Promise<Seed | null> => {
+    stubs.map(async (s): Promise<Seed | null> => {
       try {
         const raw =
           s.mediaType === 'movie'

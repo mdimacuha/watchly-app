@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { restoreAccount } from '@/services/auth/restoreAccount';
+import { TokenConfirm } from '@/components/auth/TokenConfirm';
 
 export const metadata: Metadata = {
   title: 'Restore account',
@@ -13,59 +11,47 @@ interface PageProps {
   searchParams: Promise<{ token?: string }>;
 }
 
+// Restoring waits for the button: a mail scanner opening the link must never
+// cancel a deletion the person asked for.
 export default async function RestoreAccountPage({ searchParams }: PageProps) {
   const { token } = await searchParams;
 
-  let state: 'success' | 'invalid' | 'missing' = 'success';
   if (!token) {
-    state = 'missing';
-  } else {
-    try {
-      await restoreAccount(token);
-    } catch {
-      state = 'invalid';
-    }
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-6 py-12">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+          <RotateCcw className="h-12 w-12 text-muted-foreground" />
+          <h1 className="text-h2">Open your restore link</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            This page needs the restore link from the email we sent when your account was scheduled for deletion.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center px-6 py-12">
-      <div className="max-w-md w-full text-center flex flex-col items-center gap-4">
-        {state === 'success' ? (
-          <>
-            <CheckCircle2 className="w-12 h-12 text-emerald-400" />
-            <h1 className="text-h2">Welcome back</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              Your account is restored. Sign in to pick up exactly where you
-              left off — your watchlists, favorites, and activity are intact.
-            </p>
-            <Link href="/signin" className="mt-2">
-              <Button className="gap-2">Sign in</Button>
-            </Link>
-          </>
-        ) : state === 'missing' ? (
-          <>
-            <RotateCcw className="w-12 h-12 text-muted-foreground" />
-            <h1 className="text-h2">Open your restore link</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              This page needs a valid restore link from the email we sent
-              you when your account was scheduled for deletion.
-            </p>
-          </>
-        ) : (
-          <>
-            <XCircle className="w-12 h-12 text-destructive" />
-            <h1 className="text-h2">This restore link is no longer valid</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              The link has expired or has already been used. The 30-day
-              restore window may have passed — if so your account data has
-              been permanently removed.
-            </p>
-            <Link href="/signin" className="mt-2">
-              <Button variant="outline">Back to sign in</Button>
-            </Link>
-          </>
-        )}
-      </div>
-    </div>
+    <TokenConfirm
+      endpoint="/api/v1/auth/restore-account"
+      token={token}
+      ask={{
+        icon: <RotateCcw className="h-12 w-12 text-muted-foreground" />,
+        title: 'Restore your account?',
+        body: 'Your account comes back exactly as you left it: watchlists, favorites, likes and activity. The deletion is cancelled.',
+        action: 'Restore my account',
+      }}
+      done={{
+        icon: <CheckCircle2 className="h-12 w-12 text-emerald-400" />,
+        title: 'Welcome back',
+        body: 'Your account is restored. Sign in to pick up exactly where you left off.',
+        cta: { label: 'Sign in', href: '/signin' },
+      }}
+      failed={{
+        icon: <XCircle className="h-12 w-12 text-destructive" />,
+        title: 'This restore link is no longer valid',
+        body: 'It has expired or was already used. If the 30-day window has passed, the account has been permanently deleted.',
+        cta: { label: 'Back to sign in', href: '/signin' },
+      }}
+    />
   );
 }

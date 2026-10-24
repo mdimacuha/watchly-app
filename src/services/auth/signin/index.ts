@@ -5,6 +5,7 @@ import { verifyPassword } from '@/utils/server/crypto/password';
 import { makeSessionToken } from '@/utils/server/tokens';
 import { UnauthorizedAppError } from '@/utils/errors';
 import { getUserRegion, getUserTheme, type ThemePreference } from '@/services/preferences';
+import { isOnboardingCompleted } from '@/services/onboarding/progress';
 import { eq, or } from 'drizzle-orm';
 
 // Persistent ("remember me") sessions live for 30 days; non-persistent
@@ -57,9 +58,10 @@ export async function signIn(input: SignInInput, opts: { userAgent?: string | nu
     userAgent: sessionUserAgent(opts.userAgent),
   });
 
-  const [regionCode, theme] = await Promise.all([
+  const [regionCode, theme, onboardingCompleted] = await Promise.all([
     getUserRegion(user.id),
     getUserTheme(user.id),
+    isOnboardingCompleted(user.id),
   ]);
 
   return {
@@ -73,6 +75,8 @@ export async function signIn(input: SignInInput, opts: { userAgent?: string | nu
     },
     regionCode,
     theme: theme satisfies ThemePreference | null,
+    // False sends the person back to the first entry they haven't answered.
+    onboardingCompleted,
     sessionToken,
     sessionExpiresAt,
     // When false, the caller sets a browser-session cookie (no expiry) rather

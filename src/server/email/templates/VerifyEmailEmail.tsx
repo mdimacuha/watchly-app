@@ -1,66 +1,33 @@
-import { Button, Section, Text } from '@react-email/components';
-import { EmailLayout } from './EmailLayout';
+import { EmailLayout, Paragraph, PasteLink, PrimaryButton, StubNote, greet } from './EmailLayout';
 
 interface VerifyEmailEmailProps {
-  recipientName: string;
-  /** Absolute URL to the verify endpoint with token embedded. */
+  recipientName: string | null;
+  /** Absolute URL to the verify page, token embedded. */
   verifyUrl: string;
+  siteUrl: string;
+  assetUrl?: string;
 }
 
-export function VerifyEmailEmail({
-  recipientName,
-  verifyUrl,
-}: VerifyEmailEmailProps) {
+/** Sent at signup and on resend. The only email at signup: it carries the deadline. */
+export function VerifyEmailEmail({ recipientName, verifyUrl, siteUrl, assetUrl }: VerifyEmailEmailProps) {
   return (
     <EmailLayout
-      preview="Verify your Watchly email to get the full experience"
-      heading="Verify your email"
+      preview="One tap confirms your inbox. Confirm within your first week to keep using Watchly."
+      kicker="Admit one · Box office"
+      heading="Confirm your email"
+      siteUrl={siteUrl}
+      assetUrl={assetUrl}
+      reason="You’re getting this because this address was used to create a Watchly account."
+      stub={
+        <>
+          <StubNote label="Link valid for 24 hours">Didn’t sign up for Watchly? Ignore this email and nothing happens.</StubNote>
+          <PasteLink href={verifyUrl} />
+        </>
+      }
     >
-      <Text style={paragraph}>
-        Hi {recipientName || 'there'} — confirm this is the right inbox so we
-        can keep your account secure.
-      </Text>
-      <Section style={ctaSection}>
-        <Button href={verifyUrl} style={button}>
-          Verify email
-        </Button>
-      </Section>
-      <Text style={paragraphMuted}>
-        Or paste this link into your browser:
-        <br />
-        <span style={linkText}>{verifyUrl}</span>
-      </Text>
-      <Text style={paragraphMuted}>
-        This link expires in 24 hours. If you didn&apos;t create a Watchly
-        account, ignore this email.
-      </Text>
+      <Paragraph>{greet(recipientName)}, one tap confirms this is your inbox and Watchly is yours to keep.</Paragraph>
+      <Paragraph muted>Confirm within your first week to keep using Watchly after it. Everything works in the meantime.</Paragraph>
+      <PrimaryButton href={verifyUrl}>Confirm email</PrimaryButton>
     </EmailLayout>
   );
 }
-
-const paragraph: React.CSSProperties = {
-  color: '#e4e4e7',
-  fontSize: '15px',
-  lineHeight: '1.55',
-  margin: '0 0 16px',
-};
-const paragraphMuted: React.CSSProperties = {
-  color: '#a1a1aa',
-  fontSize: '13px',
-  lineHeight: '1.55',
-  margin: '24px 0 0',
-};
-const ctaSection: React.CSSProperties = { textAlign: 'center', margin: '28px 0 8px' };
-const button: React.CSSProperties = {
-  backgroundColor: '#3B4FFF',
-  color: '#ffffff',
-  borderRadius: '8px',
-  fontSize: '14px',
-  fontWeight: 600,
-  padding: '12px 22px',
-  textDecoration: 'none',
-};
-const linkText: React.CSSProperties = {
-  color: '#3B4FFF',
-  wordBreak: 'break-all',
-};

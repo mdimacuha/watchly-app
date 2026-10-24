@@ -1,68 +1,40 @@
-import { Button, Section, Text } from '@react-email/components';
-import { EmailLayout } from './EmailLayout';
+import { EmailLayout, Paragraph, PasteLink, PrimaryButton, StubNote, greet } from './EmailLayout';
 
 interface RestoreAccountEmailProps {
-  recipientName: string;
+  recipientName: string | null;
+  /** Absolute URL to the restore page, token embedded. */
   restoreUrl: string;
+  /** The day the account is deleted for good, e.g. "November 23, 2026". */
+  deleteOn: string;
+  siteUrl: string;
+  assetUrl?: string;
 }
 
-export function RestoreAccountEmail({
-  recipientName,
-  restoreUrl,
-}: RestoreAccountEmailProps) {
+/** Sent when deletion is requested. Calm and factual: a real date, what's kept, what's lost. */
+export function RestoreAccountEmail({ recipientName, restoreUrl, deleteOn, siteUrl, assetUrl }: RestoreAccountEmailProps) {
   return (
     <EmailLayout
-      preview="Restore your Watchly account within 30 days"
-      heading="Your account has been scheduled for deletion"
+      preview={`Your Watchly account will be deleted on ${deleteOn}. Restore it any time before then.`}
+      kicker={`Your seat is held · until ${deleteOn}`}
+      heading="Your account is scheduled for deletion"
+      siteUrl={siteUrl}
+      assetUrl={assetUrl}
+      reason="You’re getting this because deletion was requested for this Watchly account."
+      stub={
+        <>
+          <StubNote label={`After ${deleteOn}`}>
+            Your account and everything in it are deleted for good and can’t be recovered. If you meant to delete it, you don’t need to do anything.
+          </StubNote>
+          <PasteLink href={restoreUrl} />
+        </>
+      }
     >
-      <Text style={paragraph}>
-        Hi {recipientName || 'there'} — we&apos;ve scheduled your Watchly
-        account for deletion. Your data is preserved for 30 days. If this
-        was a mistake or you change your mind, you can restore everything
-        with one click.
-      </Text>
-      <Section style={ctaSection}>
-        <Button href={restoreUrl} style={button}>
-          Restore my account
-        </Button>
-      </Section>
-      <Text style={paragraphMuted}>
-        Or paste this link into your browser:
-        <br />
-        <span style={linkText}>{restoreUrl}</span>
-      </Text>
-      <Text style={paragraphMuted}>
-        This link expires in 30 days. After that we&apos;ll permanently
-        remove your account, watchlists, favorites, and activity — no recovery
-        possible.
-      </Text>
+      <Paragraph>
+        {greet(recipientName)}, as you asked, your Watchly account will be deleted on {deleteOn}. Until then everything is kept: your watchlists, favorites,
+        likes, reviews and activity.
+      </Paragraph>
+      <Paragraph>Changed your mind? Restore it and it comes back exactly as you left it.</Paragraph>
+      <PrimaryButton href={restoreUrl}>Restore my account</PrimaryButton>
     </EmailLayout>
   );
 }
-
-const paragraph: React.CSSProperties = {
-  color: '#e4e4e7',
-  fontSize: '15px',
-  lineHeight: '1.55',
-  margin: '0 0 16px',
-};
-const paragraphMuted: React.CSSProperties = {
-  color: '#a1a1aa',
-  fontSize: '13px',
-  lineHeight: '1.55',
-  margin: '24px 0 0',
-};
-const ctaSection: React.CSSProperties = { textAlign: 'center', margin: '28px 0 8px' };
-const button: React.CSSProperties = {
-  backgroundColor: '#3B4FFF',
-  color: '#ffffff',
-  borderRadius: '8px',
-  fontSize: '14px',
-  fontWeight: 600,
-  padding: '12px 22px',
-  textDecoration: 'none',
-};
-const linkText: React.CSSProperties = {
-  color: '#3B4FFF',
-  wordBreak: 'break-all',
-};

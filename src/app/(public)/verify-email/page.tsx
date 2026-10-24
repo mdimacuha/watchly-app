@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CheckCircle2, XCircle, MailCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { consumeEmailVerification } from '@/services/auth/verifyEmail';
+import { getSessionWithUser } from '@/server/auth/session';
+import { TokenConfirm } from '@/components/auth/TokenConfirm';
 
 export const metadata: Metadata = {
   title: 'Verify email',
@@ -13,64 +14,69 @@ interface PageProps {
   searchParams: Promise<{ token?: string }>;
 }
 
+const verified = {
+  icon: <CheckCircle2 className="h-12 w-12 text-emerald-400" />,
+  title: 'Email confirmed',
+  body: 'You’re all set. Your Watchly account is yours to keep.',
+  cta: { label: 'Open Tonight’s Programme', href: '/programme' },
+};
+
+// The token is used only when the person presses Confirm (see TokenConfirm:
+// mail scanners open links, they don't press buttons).
 export default async function VerifyEmailPage({ searchParams }: PageProps) {
   const { token } = await searchParams;
+  const current = await getSessionWithUser().catch(() => null);
 
-  // Token consumption runs server-side on every page load. Single-use:
-  // the row is deleted in the same DB call so a forwarded link can't be
-  // redeemed twice. On success we render a success state; on failure
-  // (missing/expired/already-used) we render a recoverable error state.
-  let state: 'success' | 'invalid' | 'missing' = 'success';
+  // Already verified (on this device): nothing to confirm, whatever the link.
+  if (current?.user.isVerified) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-6 py-12">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+          {verified.icon}
+          <h1 className="text-h2">{verified.title}</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">{verified.body}</p>
+          <Link href={verified.cta.href} className="mt-2">
+            <Button>{verified.cta.label}</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!token) {
-    state = 'missing';
-  } else {
-    try {
-      await consumeEmailVerification(token);
-    } catch {
-      state = 'invalid';
-    }
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-6 py-12">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+          <MailCheck className="h-12 w-12 text-muted-foreground" />
+          <h1 className="text-h2">Confirm your email</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Open the link in the email we sent you. Didn&apos;t get it? Sign in and send a new one from the banner at the top of the app.
+          </p>
+          <Link href="/signin" className="mt-2">
+            <Button variant="outline">Sign in</Button>
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center px-6 py-12">
-      <div className="max-w-md w-full text-center flex flex-col items-center gap-4">
-        {state === 'success' ? (
-          <>
-            <CheckCircle2 className="w-12 h-12 text-emerald-400" />
-            <h1 className="text-h2">Email verified</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              You&apos;re all set. Your Watchly account is now fully active.
-            </p>
-            <Link href="/programme" className="mt-2">
-              <Button className="gap-2">Open Tonight&apos;s Programme</Button>
-            </Link>
-          </>
-        ) : state === 'missing' ? (
-          <>
-            <MailCheck className="w-12 h-12 text-muted-foreground" />
-            <h1 className="text-h2">Verify your email</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              Open the verification link in your inbox to confirm your email
-              address. Didn&apos;t get the email? Sign in and request a new one.
-            </p>
-            <Link href="/signin" className="mt-2">
-              <Button variant="outline">Sign in</Button>
-            </Link>
-          </>
-        ) : (
-          <>
-            <XCircle className="w-12 h-12 text-destructive" />
-            <h1 className="text-h2">This link is no longer valid</h1>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              The verification link has expired or has already been used. Sign
-              in and request a new one from the banner at the top of the app.
-            </p>
-            <Link href="/signin" className="mt-2">
-              <Button variant="outline">Sign in</Button>
-            </Link>
-          </>
-        )}
-      </div>
-    </div>
+    <TokenConfirm
+      endpoint="/api/v1/auth/verify-email"
+      token={token}
+      ask={{
+        icon: <MailCheck className="h-12 w-12 text-muted-foreground" />,
+        title: 'Confirm your email',
+        body: 'One tap and your Watchly account is yours to keep.',
+        action: 'Confirm email',
+      }}
+      done={verified}
+      failed={{
+        icon: <XCircle className="h-12 w-12 text-destructive" />,
+        title: 'This link is no longer valid',
+        body: 'It has expired or was already used. Sign in and send a new one from the banner at the top of the app.',
+        cta: { label: 'Sign in', href: '/signin' },
+      }}
+    />
   );
 }

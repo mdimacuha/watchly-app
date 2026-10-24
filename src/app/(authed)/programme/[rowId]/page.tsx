@@ -43,8 +43,8 @@ export default async function ForYouRowPage({ params }: PageProps) {
     <div className="px-8 py-10 max-w-6xl mx-auto w-full flex flex-col gap-6">
       <BackLink fallbackHref="/programme" label="Back to Tonight's Programme" />
 
-      <header className="flex flex-col gap-1">
-        <h1 className="text-h2">{title}</h1>
+      <header className="flex flex-col gap-3">
+        <h1 className="type-display text-5xl text-foreground sm:text-6xl">{title}</h1>
         <p className="text-sm text-muted-foreground">Full list, ranked.</p>
       </header>
 

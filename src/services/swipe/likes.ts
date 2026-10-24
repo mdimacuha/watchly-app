@@ -14,18 +14,27 @@ import type { SwipeSource, TitleType } from './constants';
 // strongest yes the deck has. Who may read them is the caller's job (resolveProfileVisibility).
 
 /** Where a like came from, as the profile shows it. */
-export type LikeOrigin = 'swipe' | 'reel';
+export type LikeOrigin = 'swipe' | 'reel' | 'onboarding';
 
 // Reel likes recorded before the 'reel' source existed say 'recommendation'.
 /** Swipe verdicts the Likes tab shows. */
 const LIKE_ACTIONS = ['liked', 'saved'] as const;
 
 const ORIGIN_SOURCES: Record<LikeOrigin, SwipeSource[]> = {
-  swipe: ['swipe_discovery', 'manual', 'onboarding'],
+  swipe: ['swipe_discovery', 'manual'],
   reel: ['reel', 'recommendation'],
+  // Titles picked on signup's taste step.
+  onboarding: ['onboarding'],
 };
 
 export const LIKES_PAGE_SIZE = 12;
+
+export interface LikesPage {
+  items: ProfileLike[];
+  hasMore: boolean;
+  /** Sources this profile has likes from; only on the first unfiltered page. */
+  origins?: LikeOrigin[];
+}
 
 export interface ProfileLike {
   /** title_swipes id — the handle Unlike deletes. */
@@ -57,7 +66,11 @@ export interface RemovedLike {
 export async function getLikesPage(
   userId: string,
   opts: { before?: Date; origin?: LikeOrigin } = {},
-): Promise<{ items: ProfileLike[]; hasMore: boolean }> {
+): Promise<LikesPage> {
+  // The first unfiltered page also says which sources this profile has, so
+  // the tab can hide filters that would only ever be empty.
+  // Best-effort: on failure the tab just shows every filter.
+  const origins = !opts.before && !opts.origin ? likeOrigins(userId).catch(() => undefined) : Promise.resolve(undefined);
   const where = [eq(titleSwipes.userId, userId), inArray(titleSwipes.action, [...LIKE_ACTIONS])];
   if (opts.before) where.push(lt(titleSwipes.updatedAt, opts.before));
   if (opts.origin) where.push(inArray(titleSwipes.source, ORIGIN_SOURCES[opts.origin]));
@@ -84,7 +97,7 @@ export async function getLikesPage(
       id: r.id,
       mediaType,
       tmdbId: r.titleId,
-      origin: ORIGIN_SOURCES.reel.includes(r.source as SwipeSource) ? 'reel' : 'swipe',
+      origin: originOf(r.source),
       favorited: r.action === 'saved',
       likedAt: r.updatedAt.toISOString(),
       title: '',
@@ -121,7 +134,15 @@ export async function getLikesPage(
     }
   });
 
-  return { items, hasMore: rows.length > LIKES_PAGE_SIZE };
+  return { items, hasMore: rows.length > LIKES_PAGE_SIZE, origins: await origins };
+}
+
+async function likeOrigins(userId: string): Promise<LikeOrigin[]> {
+  const rows = await db
+    .selectDistinct({ source: titleSwipes.source })
+    .from(titleSwipes)
+    .where(and(eq(titleSwipes.userId, userId), inArray(titleSwipes.action, [...LIKE_ACTIONS])));
+  return [...new Set(rows.map((r) => originOf(r.source)))];
 }
 
 /**
@@ -173,4 +194,10 @@ export async function restoreLike(userId: string, like: RemovedLike): Promise<bo
     .returning({ id: titleSwipes.id });
   if (inserted.length > 0) staleForYouPool(userId);
   return inserted.length > 0;
+}
+
+function originOf(source: string): LikeOrigin {
+  if (ORIGIN_SOURCES.reel.includes(source as SwipeSource)) return 'reel';
+  if (ORIGIN_SOURCES.onboarding.includes(source as SwipeSource)) return 'onboarding';
+  return 'swipe';
 }

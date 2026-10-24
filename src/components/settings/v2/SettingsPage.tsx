@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Settings } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { SettingsSnapshot } from '@/services/settings/snapshot';
 import { useSettings, type SettingsState } from './useSettings';
@@ -18,10 +17,8 @@ export function SettingsPage({ snapshot }: { snapshot: SettingsSnapshot }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-8">
-      <header className="mb-8 flex flex-col gap-1">
-        <h1 className="flex items-center gap-2.5 text-h2">
-          <Settings className="h-6 w-6 text-primary" aria-hidden /> Settings
-        </h1>
+      <header className="mb-8 flex flex-col gap-3">
+        <h1 className="type-display text-6xl text-foreground sm:text-7xl">Settings</h1>
         <p className="text-sm text-muted-foreground">Everything on one page, by the question you came with.</p>
       </header>
 

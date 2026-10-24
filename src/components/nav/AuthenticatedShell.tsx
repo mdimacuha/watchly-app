@@ -80,7 +80,7 @@ export function AuthenticatedShell({
   // ----- Focused mode (no sidebar, back-button top bar) -----
   if (focused) {
     return (
-      <div className="min-h-screen bg-background">
+      <div data-app-shell className="min-h-screen bg-background">
         <TopBarBack />
         <main>{children}</main>
         <ToastProvider />
@@ -104,7 +104,7 @@ export function AuthenticatedShell({
   // CSS-toggled copies mounted every page twice: double effects, fetches,
   // analytics and duplicate ids.)
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div data-app-shell className="min-h-screen flex flex-col bg-background">
       {/* ===== Desktop sidebar (always in DOM, animates width) ===== */}
       {floating ? (
         // Floating: off the edge by the chosen gap on every side.

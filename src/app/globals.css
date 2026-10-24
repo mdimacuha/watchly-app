@@ -137,7 +137,9 @@ body {
    load Anton via next/font and expose it as --font-anton. */
 @layer utilities {
   .type-display {
-    font-family: var(--font-anton), var(--font-sans);
+    /* Not var(--font-sans): that resolves on :root, where Geist's variable
+       isn't set, which voided this whole declaration. */
+    font-family: var(--font-anton), var(--font-geist-sans), sans-serif;
     text-transform: uppercase;
     line-height: 0.9;
     letter-spacing: 0.005em;

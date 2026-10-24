@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/db';
-import { users } from '@/db/schema';
+import { userProfiles, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { env } from '@/env';
 import { SITE_URL } from '@/lib/seo';
@@ -57,27 +57,46 @@ function appUrl(): string {
 interface UserContactRow {
   id: string;
   email: string;
-  firstName: string;
+  /**
+   * The name to greet with: the profile's display name (the first run's
+   * "Name on the stub"), or null. Never users.firstName — new accounts store
+   * the username there — and never the username itself: "Hi there" beats
+   * "Hi film.lover".
+   */
+  name: string | null;
 }
 
-async function loadContactByUserId(
-  userId: string,
-): Promise<UserContactRow | null> {
-  const row = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: { id: true, email: true, firstName: true },
-  });
-  return row ?? null;
+const contactColumns = { id: users.id, email: users.email, displayName: userProfiles.displayName, username: users.username };
+
+function toContact(row: { id: string; email: string; displayName: string | null; username: string } | undefined): UserContactRow | null {
+  if (!row) return null;
+  const display = row.displayName?.trim() ?? '';
+  return { id: row.id, email: row.email, name: display && display !== row.username ? display : null };
 }
 
-async function loadContactByEmail(
-  email: string,
-): Promise<UserContactRow | null> {
-  const row = await db.query.users.findFirst({
-    where: eq(users.email, email),
-    columns: { id: true, email: true, firstName: true },
-  });
-  return row ?? null;
+async function loadContactByUserId(userId: string): Promise<UserContactRow | null> {
+  const [row] = await db
+    .select(contactColumns)
+    .from(users)
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
+  return toContact(row);
+}
+
+async function loadContactByEmail(email: string): Promise<UserContactRow | null> {
+  const [row] = await db
+    .select(contactColumns)
+    .from(users)
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(eq(users.email, email))
+    .limit(1);
+  return toContact(row);
+}
+
+/** Analytics tags for links that carry no token (never on token links: they'd leak into referrers). */
+function tagged(path: string, campaign: string): string {
+  return `${appUrl()}${path}?utm_source=email&utm_medium=email&utm_campaign=${campaign}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,21 +148,19 @@ export async function sendVerificationEmail(
 
   await sendMail({
     to: contact.email,
-    subject: 'Verify your Watchly email',
+    subject: 'Confirm your Watchly email',
     template: VerifyEmailEmail({
-      recipientName: contact.firstName,
+      recipientName: contact.name,
       verifyUrl,
+      siteUrl: appUrl(),
     }),
   });
 }
 
 /**
- * Marketing-style welcome email fired once on signup, immediately after
- * the verification token send. Distinct from `sendVerificationEmail` so
- * it can be skipped (e.g. for admin-created accounts) or re-fired from
- * a future "resend welcome" UI without touching the verification flow.
- *
- * No-ops silently if the user row can't be resolved.
+ * The welcome, sent once, the moment the email is confirmed (not at signup,
+ * where it would compete with the verify email's deadline). By then the
+ * first run has usually set their name. No-ops if the user is gone.
  */
 export async function sendWelcomeEmail(userId: string): Promise<void> {
   const contact = await loadContactByUserId(userId);
@@ -151,10 +168,11 @@ export async function sendWelcomeEmail(userId: string): Promise<void> {
 
   await sendMail({
     to: contact.email,
-    subject: 'Welcome to Watchly',
+    subject: 'You’re in. Tonight’s Programme is ready',
     template: WelcomeEmail({
-      recipientName: contact.firstName,
-      searchUrl: `${appUrl()}/discover`,
+      recipientName: contact.name,
+      programmeUrl: tagged('/programme', 'welcome'),
+      siteUrl: appUrl(),
     }),
   });
 }
@@ -190,8 +208,9 @@ export async function sendPasswordResetEmail(email: string): Promise<void> {
     to: contact.email,
     subject: 'Reset your Watchly password',
     template: PasswordResetEmail({
-      recipientName: contact.firstName,
+      recipientName: contact.name,
       resetUrl,
+      siteUrl: appUrl(),
     }),
   });
 }
@@ -219,13 +238,22 @@ export async function sendRestoreAccountEmail(userId: string): Promise<void> {
   });
 
   const restoreUrl = `${appUrl()}/restore-account?token=${encodeURIComponent(token)}`;
+  // The day the restore link (and the soft-delete window) runs out.
+  const deleteOn = new Date(Date.now() + ACCOUNT_RESTORE_TTL_SECONDS * 1000).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 
   await sendMail({
     to: contact.email,
-    subject: 'Restore your Watchly account',
+    subject: `Your Watchly account will be deleted on ${deleteOn}`,
     template: RestoreAccountEmail({
-      recipientName: contact.firstName,
+      recipientName: contact.name,
       restoreUrl,
+      deleteOn,
+      siteUrl: appUrl(),
     }),
   });
 }

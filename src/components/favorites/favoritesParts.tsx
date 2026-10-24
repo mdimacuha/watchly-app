@@ -102,8 +102,8 @@ export function FavHeader({ list, folderCount, folderNoun, action }: { list: Fav
     <header className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-h2">Favorites</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="type-display text-6xl text-foreground sm:text-7xl">Favorites</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
             The things you love, kept for good · {folderCount} {folderCount === 1 ? folderNoun : `${folderNoun}s`}
           </p>
         </div>

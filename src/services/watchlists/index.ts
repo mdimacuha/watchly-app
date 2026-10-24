@@ -28,6 +28,8 @@ import { moderateText } from '@/services/moderation/contentModeration';
 import { logger } from '@/lib/log';
 import { placeAtRank } from '@/lib/ranking';
 import { invalidateForYouPool, libraryTag } from '@/services/forYou/cacheTag';
+import { invalidateNewFeed } from '@/services/newReleases/cacheTag';
+import { journeyPatch } from './journey';
 import { unstable_cache } from 'next/cache';
 
 // Helper: runs name + description through moderateText. Throws a
@@ -184,6 +186,7 @@ export async function deleteWatchlist(
 
   await db.delete(watchlists).where(eq(watchlists.id, watchlistId));
   invalidateForYouPool(userId);
+  invalidateNewFeed(userId);
 }
 
 type WatchlistAggregate = Omit<WatchlistWithCount, 'posterPaths'>;
@@ -526,6 +529,7 @@ export async function addItem(
 
   if (row) {
     invalidateForYouPool(userId);
+    invalidateNewFeed(userId);
     await recordActivity(userId, {
       type: 'watchlist_add',
       payload: {
@@ -578,6 +582,7 @@ export async function bulkAddItems(
 
   if (inserted.length > 0) {
     invalidateForYouPool(userId);
+    invalidateNewFeed(userId);
     await recordActivity(userId, {
       type: 'watchlist_bulk_add',
       payload: {
@@ -758,23 +763,12 @@ export async function removeItem(
     .set({ updatedAt: new Date() })
     .where(eq(watchlists.id, watchlistId));
   invalidateForYouPool(userId);
+  invalidateNewFeed(userId);
 }
 
-// Set of statuses that mark "the user has started watching". First entry
-// into any of these sets started_at; staying within the set leaves it alone.
-const WATCHING_STATUSES: ReadonlySet<WatchlistItemStatus> = new Set([
-  'watching',
-  'rewatch',
-]);
-
 /**
- * Update the status of a single watchlist item. Also manages the journey
- * timestamps:
- *   - started_at: set on first transition INTO watching/rewatch (if not already
- *     set). Never cleared — so "started X ago" stays stable across pauses.
- *   - finished_at: set on transition INTO a watched status (finished /
- *     rewatch). Kept when moving between them — a rewatch keeps the date
- *     you first finished it. Cleared when leaving both.
+ * Update the status of a single watchlist item, with the journey timestamps
+ * from `journeyPatch` (started_at / finished_at rules).
  *
  * Ownership is verified via a subquery on the parent watchlist.
  */
@@ -809,28 +803,13 @@ export async function updateItemStatus(
 
     if (!current) throw new NotFoundAppError('Watchlist item not found');
 
-    const now = new Date();
-    const next = parsed.data.status;
-
-    const setStartedAt =
-      !current.startedAt && WATCHING_STATUSES.has(next) ? now : undefined;
-    const isEnteringFinished =
-      isWatchedStatus(next) && !isWatchedStatus(current.status);
-    const isLeavingFinished =
-      !isWatchedStatus(next) && isWatchedStatus(current.status);
-
     await tx
       .update(watchlistItems)
-      .set({
-        status: next,
-        ...(setStartedAt && { startedAt: setStartedAt }),
-        ...(isEnteringFinished && { finishedAt: now }),
-        ...(isLeavingFinished && { finishedAt: null }),
-        updatedAt: now,
-      })
+      .set(journeyPatch(current, parsed.data.status, new Date()))
       .where(eq(watchlistItems.id, parsed.data.itemId));
   });
   invalidateForYouPool(userId);
+  invalidateNewFeed(userId);
 }
 
 /**

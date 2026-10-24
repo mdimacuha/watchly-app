@@ -1,10 +1,8 @@
-import { Sparkles } from 'lucide-react';
 import { requireUser } from '@/server/auth/requireUser';
 import { getSwipeDeck } from '@/services/swipe';
 import { SwipeDeckClient } from '@/components/swipe/SwipeDeckClient';
 import { SwipeEmptyState } from '@/components/swipe/SwipeEmptyState';
 import { SwipeGuide } from '@/components/swipe/SwipeGuide';
-import { StatusPill } from '@/components/watchly/StatusPill';
 
 /**
  * /swipe — WatchlySwipe discovery deck. Server-renders the first page of
@@ -22,11 +20,7 @@ export default async function SwipePage() {
     // itself is what should read as the focal point on this page.
     <div className="px-6 py-8 sm:py-10 max-w-4xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Sparkles size={22} className="text-primary" />
-          <h1 className="text-h2">WatchlySwipe</h1>
-          <StatusPill kind="experimental" />
-        </div>
+        <h1 className="type-display text-6xl text-foreground sm:text-7xl">Watchly Swipe</h1>
         {/* Verdicts, the reel and every control, touch and keyboard. */}
         <SwipeGuide />
       </div>

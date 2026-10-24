@@ -100,7 +100,7 @@ export function SearchPageClient() {
       {/* Header Section */}
       <div className="flex flex-col space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-h1">Discover</h1>
+          <h1 className="type-display text-6xl text-foreground sm:text-7xl">Discover</h1>
           <RegionToggle />
         </div>
 

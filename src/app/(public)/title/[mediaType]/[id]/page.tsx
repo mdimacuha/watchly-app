@@ -2,11 +2,10 @@ import type { Metadata } from 'next';
 import { getTitlePagePayload, MediaType } from '@/services/tmdb/title';
 import { notFound } from 'next/navigation';
 import { TitleDetailsClient } from '@/components/title/TitleDetailsClient';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { getTitleMeta } from '@/services/tmdb/meta';
 import { buildImageUrl } from '@/lib/tmdb';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { TmdbError } from '@/server/tmdb/errors';
 import { absoluteUrl, clampDescription } from '@/lib/seo';
 
 // Region-agnostic and free of per-user reads → ISR-cacheable. Region providers
@@ -98,23 +97,11 @@ export default async function TitlePage({ params }: PageProps) {
       id,
     });
   } catch (error) {
-    console.error('Failed to fetch title data:', error);
-    // Simple Error UI
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-4 text-center">
-        <h1 className="text-2xl font-bold">Failed to load title</h1>
-        <p className="text-muted-foreground">
-          The requested title could not be found or there was an error.
-        </p>
-        <Link
-          href="/"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Home
-        </Link>
-      </div>
-    );
+    // A title TMDB doesn't have is a real 404 (the app's "Not showing" page).
+    // Anything else is rethrown to error.tsx ("Try again"): an error is never
+    // cached, where a rendered error page would be kept for the whole 24h.
+    if (error instanceof TmdbError && error.status === 404) notFound();
+    throw error;
   }
 
   const posterImage = buildImageUrl(titleData.details.posterPath, 'w500');

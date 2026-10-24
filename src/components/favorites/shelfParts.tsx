@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { PageStrip, usePaged } from '@/components/watchly/Paginated';
 import { Check, Globe, HeartOff, Lock, Pencil, Plus, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { ACCENTS, ACCENT_SLUGS, getAccent } from '@/constants/accentColors';
@@ -188,8 +189,13 @@ export function ShelfCardMenu({
   );
 }
 
-/** The retained grid: uniform 2:3 cards, shelf names under, ⋯ menu; optional select / drag. */
+/**
+ * The retained grid: uniform 2:3 cards, shelf names under, ⋯ menu; optional
+ * select / drag. Pages at 6 × 3; `pageKey` (the shelf + filters) sends it
+ * back to page 1 when what's listed changes.
+ */
 export function ShelfGrid({
+  pageKey,
   items,
   v,
   f,
@@ -201,6 +207,7 @@ export function ShelfGrid({
   selected,
   onToggle,
 }: {
+  pageKey?: string;
   items: Fav[];
   v: FavView;
   f: FoldersApi;
@@ -213,10 +220,21 @@ export function ShelfGrid({
   onToggle?: (key: string) => void;
 }) {
   const nameOf = (id: string) => f.folders.find((x) => x.id === id)?.name ?? '';
+  const gridTop = useRef<HTMLUListElement>(null);
+  const paged = usePaged(items, { anchor: gridTop });
+  const lastKey = useRef(pageKey);
+  useEffect(() => {
+    if (lastKey.current === pageKey) return;
+    lastKey.current = pageKey;
+    paged.go(1);
+    // Only a change of what's listed resets the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKey]);
   if (items.length === 0) return <EmptyResults>{empty}</EmptyResults>;
   return (
-    <ul className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-      {items.map((fav) => {
+    <div className="flex flex-col gap-8">
+    <ul ref={gridTop} className="grid scroll-mt-6 grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      {paged.slice.map((fav) => {
         const key = favKey(fav);
         const shelves = f.foldersOf(key);
         return (
@@ -258,6 +276,8 @@ export function ShelfGrid({
         );
       })}
     </ul>
+    <PageStrip page={paged.page} pages={paged.pages} size={paged.size} total={paged.total} go={paged.go} label="favorites" />
+    </div>
   );
 }
 

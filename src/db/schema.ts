@@ -177,6 +177,9 @@ export const users = pgTable(
     avatarUrl: text('avatar_url').notNull().default(''),
 
     isVerified: boolean('is_verified').notNull().default(false),
+    // When the email was confirmed. Null for accounts verified before this
+    // column existed, so time-to-verify only counts newer signups.
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
     isActive: boolean('is_active').notNull().default(true),
     isSuspended: boolean('is_suspended').notNull().default(false),
     isLocked: boolean('is_locked').notNull().default(false),
@@ -314,6 +317,10 @@ export const userPreferences = pgTable(
     // jsonb, validated in the settings service; null = defaults. Devices keep
     // a copy so the sidebar never waits on this.
     sidebarSettings: jsonb('sidebar_settings'),
+
+    // /watchlists "Needs your attention": the fingerprint of the set the
+    // member dismissed; the strip stays hidden until the set changes.
+    attentionDismissed: jsonb('attention_dismissed').$type<{ fingerprint: string; at: string }>(),
 
     // Per-channel notification opt-in/out. jsonb so the value space can
     // grow without a migration each time we add an event kind. Missing
@@ -589,6 +596,19 @@ export const watchlistItems = pgTable(
     // Null = not ranked yet: shown pinned on top as "Recently Added" with no
     // rank number.
     rankedAt: timestamp('ranked_at', { withTimezone: true }),
+    // Tidy up: set when the owner answers "Keep" to a quiet-title suggestion,
+    // so that title never comes back as one.
+    keptAt: timestamp('kept_at', { withTimezone: true }),
+    // Tidy up: the streaming services (TMDB flatrate providers) seen for the
+    // title in `region` at the last check, plus any of the member's services
+    // it has since left (`gone`), so "No longer on your services" is a diff
+    // of two real reads. Null = never checked.
+    providersSeen: jsonb('providers_seen').$type<{
+      region: string;
+      services: { id: number; name: string }[];
+      gone?: { id: number; name: string; at: string }[];
+    }>(),
+    providersCheckedAt: timestamp('providers_checked_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -897,6 +917,61 @@ export const searchEvents = pgTable(
     createdIdx: index('search_events_created_idx').on(e.createdAt),
     userCreatedIdx: index('search_events_user_created_idx').on(e.userId, e.createdAt),
     sessionIdx: index('search_events_session_idx').on(e.sessionId),
+  }),
+);
+
+/**
+ * Append-only log of Needs-your-attention and Tidy up (shown, acted on,
+ * undone, dismissed), so we know whether the suggestions help. Owner-side
+ * only; never updated.
+ */
+export const watchlistEvents = pgTable(
+  'watchlist_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // 'attention_shown' | 'attention_dismissed' | 'tidy_opened' | 'tidy_action' | 'tidy_undo'
+    // (see services/watchlists/events.ts). Text so new kinds need no migration.
+    event: text('event').notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    userCreatedIdx: index('watchlist_events_user_created_idx').on(e.userId, e.createdAt),
+    eventCreatedIdx: index('watchlist_events_event_created_idx').on(e.event, e.createdAt),
+  }),
+);
+
+/**
+ * Append-only log of the first-run funnel: taste picks, signup, venue,
+ * screens, name on the stub, and the first ticket (revealed, rerolled,
+ * opened). The taste step happens before an account exists, so user_id is
+ * nullable and `session_id` (an anonymous per-tab id) ties a guest's events
+ * to the account they go on to create. Never updated.
+ */
+export const onboardingEvents = pgTable(
+  'onboarding_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Nullable for guests; a deleted account takes its events with it.
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id').notNull(),
+    // 'taste_picked' | 'signup_completed' | 'ticket_revealed' | … (see
+    // services/onboarding/events.ts). Text so new kinds need no migration.
+    event: text('event').notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (e) => ({
+    createdIdx: index('onboarding_events_created_idx').on(e.createdAt),
+    userCreatedIdx: index('onboarding_events_user_created_idx').on(e.userId, e.createdAt),
+    sessionIdx: index('onboarding_events_session_idx').on(e.sessionId),
   }),
 );
 

@@ -8,6 +8,12 @@ also the source for the **marketing site** (`gowatchly.com` /
 Last updated: 2026‑07‑11. Author: architecture audit (5 parallel subsystem
 audits: watchlists, swipe, search, social graph, events).
 
+> **Status update (2026‑10‑24, product owner):**
+> - **Phase 0** (Swipe bugs): fixed.
+> - **Phase 1**: artist search is done; "add another user's watchlist into yours" (§5.1) is deprioritized.
+> - **Phase 2**: the `mutuals` tier is dropped. Watchlist visibility stays **public / private** only, so §5.2's enum change and `areMutualFollows` are not needed. Decision 1 in §11 is superseded. The rest of §5.2 is already true in code: `watchlistsVisibility` is enforced for profiles, activity and notifications (`services/profile/visibility.ts`), and the profile gate's `followers_only` branch is real. The only gap was copy: Settings now says that a public list's link opens for anyone, whatever the profile setting.
+> - **Phase 4** (collaboration) and **Phase 5** (events) are deprioritized.
+
 ---
 
 ## 1. How to read this

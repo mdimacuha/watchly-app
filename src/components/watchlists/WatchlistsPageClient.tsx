@@ -10,12 +10,16 @@ import { ListMenu, RuntimePair, VisibilityIcon, listStats, sortLists, useListPre
 import { WIDE_MAX, WatchlistCoverCard, WatchlistsHeader, WideCascade, useScrub } from './WatchlistCoverCard';
 import { CreateWatchlistModal } from './CreateWatchlistModal';
 import { WatchlistsEmpty } from './WatchlistsEmpty';
+import type { AttentionSummary } from '@/services/watchlists/attention';
+import { AttentionStrip } from './attention/AttentionStrip';
+
 
 // Spine labels and the list view's names are set in Anton.
 const anton = Anton({ weight: '400', subsets: ['latin'], variable: '--font-anton' });
 
 interface WatchlistsPageClientProps {
   watchlists: WatchlistWithCount[];
+  attention: AttentionSummary;
 }
 
 /**
@@ -24,7 +28,7 @@ interface WatchlistsPageClientProps {
  * the cascade. Holds the lists locally so menu actions (edit, visibility,
  * delete) show instantly.
  */
-export function WatchlistsPageClient({ watchlists }: WatchlistsPageClientProps) {
+export function WatchlistsPageClient({ watchlists, attention }: WatchlistsPageClientProps) {
   const [lists, setLists] = useState(watchlists);
   const [creating, setCreating] = useState(false);
   const { view, sort, setView, setSort } = useListPrefs('grid');
@@ -44,6 +48,8 @@ export function WatchlistsPageClient({ watchlists }: WatchlistsPageClientProps) 
         setSort={setSort}
         onCreate={() => setCreating(true)}
       />
+
+      <AttentionStrip summary={attention} />
 
       {sorted.length === 0 ? (
         <WatchlistsEmpty onCreate={() => setCreating(true)} />

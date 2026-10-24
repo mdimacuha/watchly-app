@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { Mail } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import { cn } from '@/lib/cn';
+import { anton } from '@/lib/fonts';
 import { EMAIL_PREVIEWS } from './registry';
 
 export const metadata = {
@@ -7,55 +9,42 @@ export const metadata = {
 };
 
 /**
- * Dev-only email template gallery. Lists every entry in the email
- * registry; clicking through opens an isolated preview that renders the
- * template inside an iframe so inline styles read the same as they would
- * in a real client.
- *
- * Gated by `devOnlyRoutes` in `src/lib/routes.ts` — the middleware
- * returns 404 outside development.
+ * Dev-only gallery of every email, in the order a person receives them.
+ * Each one opens an isolated preview (iframe, real inline styles) with its
+ * plain-text part. Gated by `devOnlyRoutes` in `src/lib/routes.ts`.
  */
 export default function EmailPreviewIndexPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto max-w-3xl px-6 py-12 flex flex-col gap-6">
-        <div className="flex items-center gap-3">
-          <Mail size={22} className="text-primary" />
-          <h1 className="text-h2">Email Templates</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Preview every transactional + marketing email with sample data.
-          Each preview renders inside an iframe with the real inline
-          styles so layout regressions surface here before they hit a
-          real inbox.
-        </p>
+    <div className={cn(anton.variable, 'min-h-screen bg-background text-foreground')}>
+      <div className="mx-auto flex max-w-3xl flex-col px-4 py-12 sm:px-6">
+        <header className="flex items-end justify-between gap-4 border-b-2 border-foreground pb-6">
+          <div>
+            <p className="type-kicker text-muted-foreground">Debug · mail room</p>
+            <h1 className="type-display mt-3 text-6xl text-foreground sm:text-7xl">Email templates</h1>
+          </div>
+          <p className="hidden max-w-48 text-right text-sm text-muted-foreground sm:block">Every email Watchly sends, with sample data, as an inbox renders it.</p>
+        </header>
 
-        <ul className="flex flex-col gap-2 mt-2">
-          {EMAIL_PREVIEWS.map((e) => (
+        <ol className="flex flex-col">
+          {EMAIL_PREVIEWS.map((e, i) => (
             <li key={e.slug}>
               <Link
                 href={`/debug/emails/${e.slug}`}
-                className="block rounded-lg border border-border p-4 hover:border-foreground/40 hover:bg-card/60 transition-colors"
+                className="group grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-start gap-x-4 border-b border-border py-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[4.5rem_minmax(0,1fr)_auto]"
               >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-base font-semibold text-foreground">
-                    {e.name}
-                  </span>
-                  <code className="text-xs text-muted-foreground">
-                    {e.slug}
-                  </code>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {e.description}
-                </p>
-                <p className="text-xs text-foreground/70 mt-2">
-                  Subject:{' '}
-                  <span className="text-foreground">{e.subject}</span>
-                </p>
+                <span aria-hidden className="type-display text-5xl text-muted-foreground transition-colors group-hover:text-primary sm:text-6xl">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span className="flex min-w-0 flex-col gap-1.5 pt-1">
+                  <span className="text-xl font-bold text-foreground sm:text-2xl">{e.name}</span>
+                  <span className="truncate font-mono text-xs uppercase tracking-wider text-muted-foreground">{e.subject}</span>
+                  <span className="text-sm text-muted-foreground">{e.description}</span>
+                </span>
+                <ArrowRight size={18} aria-hidden className="mt-3 text-muted-foreground transition-colors group-hover:text-foreground" />
               </Link>
             </li>
           ))}
-        </ul>
+        </ol>
       </div>
     </div>
   );

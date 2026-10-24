@@ -13,9 +13,10 @@ import {
   LayoutGrid,
   LayoutPanelTop,
   List,
+  ListChecks,
+  MoreHorizontal,
   Lock,
   Pencil,
-  Plus,
   Share2,
   Trash2,
 } from 'lucide-react';
@@ -64,7 +65,8 @@ import { formatRelativeAgo } from '@/lib/format';
 import { WatchlistItemCard } from './WatchlistItemCard';
 import { SortableWatchlistItem } from './SortableWatchlistItem';
 import { WatchlistFormModal } from './WatchlistFormModal';
-import { AddTitlesModal } from './AddTitlesModal';
+import { AddTitleSearch } from './AddTitleSearch';
+import { ListRecs } from './recs/ListRecs';
 import { StatusFilterBar, type StatusFilter } from './StatusFilterBar';
 import { WatchlistBoardView } from './WatchlistBoardView';
 import { WatchlistListItem } from './WatchlistListItem';
@@ -72,6 +74,10 @@ import { SortableWatchlistListItem } from './SortableWatchlistListItem';
 import { STATUS_PRIORITY } from './StatusChip';
 import { cn } from '@/lib/cn';
 import { placeAtRank } from '@/lib/ranking';
+import { PageStrip, usePaged } from '@/components/watchly/Paginated';
+import type { AttentionSummary } from '@/services/watchlists/attention';
+import { TidyUp } from './attention/TidyUp';
+
 
 type ViewMode = 'grid' | 'list' | 'board';
 function isViewMode(v: string | null): v is ViewMode {
@@ -105,6 +111,8 @@ interface WatchlistDetailClientProps {
   items: EnrichedWatchlistItem[];
   isOwner: boolean;
   owner: WatchlistOwner;
+  /** The owner's Tidy up suggestions for this list (null for visitors). */
+  attention?: AttentionSummary | null;
 }
 
 export function WatchlistDetailClient({
@@ -112,15 +120,11 @@ export function WatchlistDetailClient({
   items: initialItems,
   isOwner,
   owner,
+  attention = null,
 }: WatchlistDetailClientProps) {
   const [watchlist, setWatchlist] = useState(initialWatchlist);
   const [items, setItems] = useState(initialItems);
   const [isEditOpen, setEditOpen] = useState(false);
-  const [isAddOpen, setAddOpen] = useState(false);
-  // Set while the add-titles modal is open and at least one title was added,
-  // so we refresh the (enriched) grid exactly once — on close — instead of
-  // re-enriching the whole list after every individual add.
-  const addedDuringSession = useRef(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
@@ -133,6 +137,17 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next === 'all') params.delete('status');
     else params.set('status', next);
+    params.delete('page');
+    replaceQuery(params);
+  };
+
+  // Tidy up (?tidy=1), owner only: started by the owner, never on its own.
+  const tidyCount = attention?.entries.length ?? 0;
+  const tidyOpen = isOwner && tidyCount > 0 && searchParams.get('tidy') === '1';
+  const setTidyOpen = (on: boolean) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (on) params.set('tidy', '1');
+    else params.delete('tidy');
     replaceQuery(params);
   };
 
@@ -172,6 +187,7 @@ export function WatchlistDetailClient({
     const params = new URLSearchParams(searchParams.toString());
     if (next) params.set('ranked', '1');
     else params.delete('ranked');
+    params.delete('page');
     replaceQuery(params);
   };
   const unrankedCount = useMemo(() => items.filter((i) => !i.rankedAt).length, [items]);
@@ -183,6 +199,11 @@ export function WatchlistDetailClient({
       ),
     [items, statusFilter, hideUnranked],
   );
+  // Grid view pages at 6 × 3. Drag-to-rank works within a page (moves use
+  // the item's place in the whole list, so ranks stay right).
+  const gridTop = useRef<HTMLDivElement>(null);
+  const paged = usePaged(filteredItems, { anchor: gridTop });
+
   // Drag-to-rank needs the whole list: a partial one would misplace moves.
   const canDrag = statusFilter === 'all' && !hideUnranked;
 
@@ -230,7 +251,7 @@ export function WatchlistDetailClient({
     [items],
   );
 
-  // Pull the freshly-enriched list after titles are added in the modal. We
+  // Pull the freshly-enriched list after titles are added (search, picks). We
   // seed `items` from props once (useState), so a plain router.refresh()
   // wouldn't update the grid — re-fetch and set explicitly instead.
   const refreshItems = async () => {
@@ -242,13 +263,19 @@ export function WatchlistDetailClient({
     }
   };
 
-  const handleAddModalClose = () => {
-    setAddOpen(false);
-    if (addedDuringSession.current) {
-      addedDuringSession.current = false;
-      void refreshItems();
-    }
+  // Adds come in bursts (a few picks in a row): refresh the grid once,
+  // shortly after the last one, instead of re-enriching it per add.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRefresh = () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => void refreshItems(), 600);
   };
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
+
+  // Posters of the titles on this list, for the picks that name them.
+  const seedPosters = useMemo(() => new Map(items.map((i) => [`${i.type}:${i.mediaId}`, i.data.posterPath] as const)), [items]);
 
   // Cards manage status optimistically; mirror the change here so filter
   // counts + active-filter view stay in sync without a refetch.
@@ -474,10 +501,13 @@ export function WatchlistDetailClient({
           )}
           {isOwner && (
             <>
-              <Button onClick={() => setAddOpen(true)} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Add titles
-              </Button>
+              {tidyCount > 0 && !tidyOpen && (
+                <Button variant="outline" onClick={() => setTidyOpen(true)} className="gap-2">
+                  <ListChecks className="w-4 h-4" />
+                  Tidy up
+                  <span className="rounded-sm bg-secondary px-1.5 font-mono text-[11px] tabular-nums">{tidyCount}</span>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setEditOpen(true)}
@@ -486,18 +516,24 @@ export function WatchlistDetailClient({
                 <Pencil className="w-4 h-4" />
                 Edit List
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setDeleteOpen(true)}
-                className="gap-2 text-destructive hover:text-destructive"
-                aria-label="Delete watchlist"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              {/* Delete sits behind ⋯, away from Share and Edit. */}
+              <MoreMenu onDelete={() => setDeleteOpen(true)} />
             </>
           )}
         </div>
       </div>
+
+      {tidyOpen && attention && (
+        <TidyUp
+          entries={attention.entries}
+          onChange={(c) => {
+            if ('restored' in c) void refreshItems();
+            else if ('removed' in c) setItems((prev) => prev.filter((i) => i.id !== c.itemId));
+            else handleStatusChange(c.itemId, c.status);
+          }}
+          onClose={() => setTidyOpen(false)}
+        />
+      )}
 
       {items.length === 0 ? (
         <EmptyState
@@ -505,20 +541,20 @@ export function WatchlistDetailClient({
           title="No items yet"
           description={
             isOwner
-              ? 'Search for titles or discover similar ones to build this list.'
+              ? 'Search for a film or show to start this list.'
               : 'This watchlist is empty.'
           }
           action={
             isOwner ? (
-              <Button onClick={() => setAddOpen(true)} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Add titles
-              </Button>
+              <AddTitleSearch watchlistId={watchlist.id} existingKeys={existingKeys} onAdded={queueRefresh} autoFocus className="w-80 max-w-full text-left" />
             ) : undefined
           }
         />
       ) : (
         <>
+          {/* Search-to-add (owner): always one step away, on every page. */}
+          {isOwner && <AddTitleSearch watchlistId={watchlist.id} existingKeys={existingKeys} onAdded={queueRefresh} className="w-full sm:max-w-sm" />}
+
           {/* Filter bar (grid-mode only — board already shows all columns)
               and view toggle live on the same row. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -631,11 +667,11 @@ export function WatchlistDetailClient({
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={filteredItems.map((i) => i.id)}
+                items={paged.slice.map((i) => i.id)}
                 strategy={rectSortingStrategy}
               >
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                  {filteredItems.map((item) => (
+                <div ref={gridTop} className="grid scroll-mt-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                  {paged.slice.map((item) => (
                     <SortableWatchlistItem
                       key={item.id}
                       item={item}
@@ -650,8 +686,8 @@ export function WatchlistDetailClient({
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-              {filteredItems.map((item) => (
+            <div ref={gridTop} className="grid scroll-mt-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+              {paged.slice.map((item) => (
                 <WatchlistItemCard
                   key={item.id}
                   item={item}
@@ -664,20 +700,15 @@ export function WatchlistDetailClient({
               ))}
             </div>
           )}
+          {viewMode === 'grid' && filteredItems.length > 0 && <PageStrip page={paged.page} pages={paged.pages} size={paged.size} total={paged.total} go={paged.go} />}
+
+          {/* More for this list (owner): closed on every visit, loads only when opened. */}
+          {isOwner && <ListRecs watchlistId={watchlist.id} seedPosters={seedPosters} onListChanged={queueRefresh} />}
         </>
       )}
 
       {isOwner && (
         <>
-          <AddTitlesModal
-            isOpen={isAddOpen}
-            onClose={handleAddModalClose}
-            watchlistId={watchlist.id}
-            existingKeys={existingKeys}
-            onAdded={() => {
-              addedDuringSession.current = true;
-            }}
-          />
 
           <WatchlistFormModal
             isOpen={isEditOpen}
@@ -714,6 +745,46 @@ export function WatchlistDetailClient({
             onConfirm={confirmRemoveItem}
           />
         </>
+      )}
+    </div>
+  );
+}
+
+/** ⋯ beside Edit: the list's less-common actions (Delete). */
+function MoreMenu({ onDelete }: { onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+  return (
+    <div ref={root} className="relative">
+      <Button variant="outline" aria-label="More list actions" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="px-3">
+        <MoreHorizontal className="w-4 h-4" />
+      </Button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-40 mt-1 min-w-44 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-elevation-card">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none"
+          >
+            <Trash2 className="w-4 h-4" /> Delete list
+          </button>
+        </div>
       )}
     </div>
   );

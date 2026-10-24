@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { tastePicksSchema } from '@/services/onboarding/validators';
 
 export const signUpSchema = z.object({
   // 254 is the RFC-practical upper bound. Trim + lowercase BEFORE the
@@ -19,16 +20,24 @@ export const signUpSchema = z.object({
     .string()
     .min(8, 'Password must be at least 8 characters')
     .max(72, 'Password must be at most 72 characters'),
+  // Optional since the first-run revamp: signup asks for email, username
+  // and password only. Older clients may still send them.
   firstName: z
     .string()
     .min(1, 'First name is required')
     .max(50)
-    .transform((v) => v.trim()),
+    .transform((v) => v.trim())
+    .optional(),
   lastName: z
     .string()
     .min(1, 'Last name is required')
     .max(50)
-    .transform((v) => v.trim()),
+    .transform((v) => v.trim())
+    .optional(),
+  // Titles picked on the taste step before the account existed.
+  picks: tastePicksSchema.optional(),
+  // The guest's per-tab analytics id, so their taste-step events join up.
+  sessionId: z.string().min(8).max(64).optional(),
 });
 
 export type SignUpInput = z.infer<typeof signUpSchema>;

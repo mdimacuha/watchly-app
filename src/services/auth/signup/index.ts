@@ -12,11 +12,12 @@ import { makeSalt, hashPassword } from '@/utils/server/crypto/password';
 import { makeSessionToken } from '@/utils/server/tokens';
 import { isEmailExisting, isUsernameExisting } from '@/services/users/helper';
 import { ValidationAppError } from '@/utils/errors';
-import { sendVerificationEmail, sendWelcomeEmail } from '@/services/auth/emailFlows';
+import { sendVerificationEmail } from '@/services/auth/emailFlows';
 import { logger } from '@/lib/log';
 import { validateUsername } from '@/services/moderation/validateUsername';
 import { moderateText } from '@/services/moderation/contentModeration';
 import { sessionUserAgent } from '@/services/auth/signin';
+import { claimGuestEvents, logOnboardingEvent, seedTastePicks } from '@/services/onboarding';
 
 export async function signUp(input: SignUpInput, opts: { userAgent?: string | null } = {}) {
   const inputData = signUpSchema.parse(input);
@@ -46,6 +47,7 @@ export async function signUp(input: SignUpInput, opts: { userAgent?: string | nu
     ['firstName', inputData.firstName],
     ['lastName', inputData.lastName],
   ] as const) {
+    if (value === undefined) continue;
     const m = moderateText(value, { minLength: 1, maxLength: 50 });
     if (!m.allowed) {
       logger.warn('[signup] name rejected', { field, reason: m.reason });
@@ -84,8 +86,11 @@ export async function signUp(input: SignUpInput, opts: { userAgent?: string | nu
         username: normalizedUsername,
         passwordDigest,
         salt,
-        firstName: inputData.firstName,
-        lastName: inputData.lastName,
+        // No name fields on the new signup: the columns stay required, so
+        // the username stands in (avatars take their initial from it) until
+        // the person sets a name on their profile.
+        firstName: inputData.firstName ?? normalizedUsername,
+        lastName: inputData.lastName ?? '',
         avatarUrl: '',
         isVerified: false,
       })
@@ -129,18 +134,20 @@ export async function signUp(input: SignUpInput, opts: { userAgent?: string | nu
     return { user, sessionToken, sessionExpiresAt };
   });
 
-  // Fire transactional + marketing emails outside the transaction —
-  // email failure shouldn't roll back user creation. Sent in parallel
-  // because they're independent; both swallow errors so neither one
-  // failing can take the other down.
-  await Promise.all([
-    sendVerificationEmail(createdUser.user.id).catch((err) => {
-      logger.warn('[signup] verification email failed', err);
-    }),
-    sendWelcomeEmail(createdUser.user.id).catch((err) => {
-      logger.warn('[signup] welcome email failed', err);
-    }),
-  ]);
+  // Only the verify email goes out at signup, outside the transaction so
+  // an email failure can't roll back the account. The welcome follows once
+  // the email is confirmed (see verifyEmail.ts), so it never competes with
+  // the verify email's deadline.
+  await sendVerificationEmail(createdUser.user.id).catch((err) => {
+    logger.warn('[signup] verification email failed', err);
+  });
+
+  // Taste picks and the guest's funnel events join the new account. Outside
+  // the transaction and non-fatal: a TMDB-shaped hiccup must not undo signup.
+  const userId = createdUser.user.id;
+  const saved = inputData.picks?.length ? await seedTastePicks(userId, inputData.picks) : 0;
+  if (inputData.sessionId) await claimGuestEvents(userId, inputData.sessionId);
+  await logOnboardingEvent(userId, inputData.sessionId ?? null, 'signup_completed', { picks: saved });
 
   return createdUser;
 }

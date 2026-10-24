@@ -3,70 +3,45 @@
 import { z } from 'zod';
 import { getSession } from '@/server/auth/session';
 import { UnauthorizedAppError, ValidationAppError } from '@/utils/errors';
-import { addFavorite } from '@/services/favorites';
-import { getUserRegion } from '@/services/preferences';
 import {
-  searchOnboardingTitles,
-  type OnboardingTitle,
-} from '@/services/onboarding/titles';
+  completeOnboarding,
+  logOnboardingEvent,
+} from '@/services/onboarding';
 
-const selectionSchema = z.array(
-  z.object({
-    mediaType: z.enum(['movie', 'tv']),
-    mediaId: z.string().min(1),
-  }),
-).max(50);
+const stepMarkSchema = z.object({
+  event: z.enum(['region_confirmed', 'services_saved', 'services_skipped', 'profile_saved', 'profile_skipped']),
+  sessionId: z.string().min(8).max(64).nullable(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+});
 
 /**
- * Adds each chosen title as a favorite. Onboarding's title-selection step
- * piggy-backs on the favorites system rather than a dedicated seed table
- * so the For You "from your favorites" row picks the signal up
- * automatically. Failures on individual rows (e.g. a TMDB id that
- * vanished) are swallowed — partial credit is better than blocking the
- * whole onboarding finish action.
+ * Records that a first-run step was answered or skipped. Awaited by the
+ * client before it moves on, because services and the name step leave no
+ * other trace to resume from.
  */
-export async function submitOnboardingTitlesAction(
-  selections: Array<{ mediaType: 'movie' | 'tv'; mediaId: string }>,
-): Promise<{ added: number }> {
+export async function markOnboardingStepAction(input: z.input<typeof stepMarkSchema>): Promise<void> {
   const session = await getSession();
   if (!session) throw new UnauthorizedAppError();
-
-  const parsed = selectionSchema.safeParse(selections);
-  if (!parsed.success) {
-    throw new ValidationAppError('Invalid selections', parsed.error.flatten());
-  }
-
-  let added = 0;
-  for (const { mediaType, mediaId } of parsed.data) {
-    try {
-      await addFavorite(session.userId, mediaId, mediaType);
-      added++;
-    } catch {
-      // Already-favorited / TMDB-not-found rows are non-fatal. We don't
-      // want a single bad pick to abort the user's whole onboarding.
-    }
-  }
-
-  return { added };
+  const parsed = stepMarkSchema.safeParse(input);
+  if (!parsed.success) throw new ValidationAppError('Invalid step', parsed.error.flatten());
+  await logOnboardingEvent(session.userId, parsed.data.sessionId, parsed.data.event, parsed.data.metadata);
 }
 
-/**
- * Server action backing the onboarding picker's search field. Empty
- * query returns an empty array so the client can fall back to the
- * server-rendered popular grid without re-fetching it.
- *
- * Region defaults to the caller's saved preference when present so
- * search results stay locale-appropriate even before the user picks
- * a region in the next onboarding step.
- */
-export async function searchOnboardingTitlesAction(
-  query: string,
-): Promise<OnboardingTitle[]> {
+const revealSchema = z.object({
+  sessionId: z.string().min(8).max(64).nullable(),
+  ticketKey: z.string().max(40).nullable(),
+  source: z.enum(['pool', 'fallback']),
+});
+
+/** The reveal: marks the first run done and logs which ticket was shown. */
+export async function completeOnboardingAction(input: z.input<typeof revealSchema>): Promise<void> {
   const session = await getSession();
   if (!session) throw new UnauthorizedAppError();
-
-  if (typeof query !== 'string' || !query.trim()) return [];
-
-  const region = await getUserRegion(session.userId);
-  return searchOnboardingTitles(query, region);
+  const parsed = revealSchema.safeParse(input);
+  if (!parsed.success) throw new ValidationAppError('Invalid reveal', parsed.error.flatten());
+  await completeOnboarding(session.userId);
+  await logOnboardingEvent(session.userId, parsed.data.sessionId, 'ticket_revealed', {
+    ticket: parsed.data.ticketKey,
+    source: parsed.data.source,
+  });
 }

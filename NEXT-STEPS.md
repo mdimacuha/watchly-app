@@ -1,29 +1,93 @@
-# Watchly v2 — Where to Focus Next
+# Watchly — Where to Focus Next
 
-A breakdown of what's done, what's in progress, and what needs attention. Pair with `SPEC.md` (product+architecture overview).
+A breakdown of what's done, what's in progress, and what needs attention. Pair with `SPEC.md` (product+architecture overview) and `docs/product-design.md` (the product compass).
+
+**Last status update: 2026-10-24.** Everything below "Recently Shipped" is the history log from May 2026; open items there are now tagged with their current status.
+
+Status key: **Live** = committed and in production · **Uncommitted** = built in the working tree, not committed · **Prototype** = exploring variants, not ready · **Parked** / **Open** / **Not started**.
 
 ---
 
-## Current State Overview
+## Current State (2026-10-24)
 
-| Feature                | Status            | Completeness |
-| ---------------------- | ----------------- | ------------ |
-| Authentication         | **Done (v2)**     | 98%          |
-| Search (public)        | Complete          | 95%          |
-| Detail pages (public)  | Complete          | 95%          |
-| Provider availability  | **Done (v2)**     | 95%          |
-| Favorites              | **Done**          | 100%         |
-| Watchlists             | **Done (v2.1)**   | 98%          |
-| My Profile             | **Done (v2.2)**   | 98%          |
-| Activity Feed          | **Done (v2.2)**   | 100%         |
-| For You                | **Done (v3)**     | 95%          |
-| Social (Follows)       | **Done (v1)**     | 95%          |
-| Notifications          | **Done (v1)**     | 95%          |
-| Settings               | **Done (v2)**     | 95%          |
-| Email Verification     | **Done**          | 100%         |
-| Password Recovery      | **Done**          | 100%         |
-| Onboarding             | **Done (v1)**     | 95%          |
-| Swipe Discovery        | **Done (v1)**     | 95%          |
+### Find — "Where can I watch this?"
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Search | **Live** | Public. Fuzzy, people-first, theme search ("time travel"), type-ahead, year + service filters, end-of-results suggestions, Seen it on results. |
+| Title pages (movie / TV / season / episode) | **Live** | Revamped layout: inline trailer, side panel, cast + crew, ratings and reviews. ISR-cached (24h). |
+| Collection + artist pages | **Live** | Artist titles deduped with all roles. Region badges load client-side (`useRegionBadges`) so cached pages don't show US badges to everyone. |
+| Quick View | **Live** | Peek from almost anywhere; where-to-watch first, collections and seasons, actor top roles. |
+| Where to watch | **Live** | Own-region services on cards ("Not in your region" pill); title / Quick View fall back to nearest region, then US, then JustWatch, and say so. |
+| Share links | **Live** | `/s/<type>-<id>` short links. |
+
+### Decide — "What should I watch tonight?"
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| For You trailer reel (beta) | **Live** | Vertical one-at-a-time reel, YouTube full player (policy-compliant), own pause, 200px min. Per-visit shuffle, trending + wildcard mix, 7-day rest. A skip is never a dislike. |
+| Tonight's Programme | **Live** | `/programme`: Feature, two Supports, Wildcard; time + mood dial; Go deeper; services bias. |
+| Watchly Swipe | **Live** | Pass / Like / Favorite deck, The Reel film strip, editable history, How it works guide. |
+| New & Coming Soon | **Prototype** | `/new` with three variants (A/B/C) behind a switcher; sidebar entry exists ahead of launch. Uncommitted. |
+| Not interested / hide a title | **Open** | Still no `user_hidden_titles`. Reel skips only rest a title; Swipe Pass is the only "no". |
+
+### Organize
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Watchlists | **Live** | 9 statuses with dates, Grid / List / Board, Auto or Ranked order, Hide unranked, notes, collection bulk-add, upvotes on public lists, URL-shareable view state. |
+| Favorites + shelves | **Live** | Shelves in DB, suggested shelves, Wide view, private until Show on profile. |
+| Sort session | **Live** + **Uncommitted fix** | Fix: shows every shelf as a scrollable bento grid sized by name (was capped at 9). |
+| Watched (ticket log) | **Live** | Seen it everywhere, log past watches, flexible dates, Undo, reviews count as watched. |
+| Title alerts ("Notify me when") | **Live** | Daily cron `/api/cron/title-alerts`. |
+
+### Share (social, opt-in)
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Profiles + member card | **Live** | Profile / Library / Reviews / Likes tabs, accent colour, Feature presentation, By the numbers, taste match, Preview as visitor, Instagram story export. |
+| Review voice | **Live** + **Uncommitted fix** | Fix: features the latest written (non-spoiler) review instead of the best-rated one. |
+| Taste profile | **Live** + **Uncommitted change** | Change: search opens, 15s+ reel views and For You / Programme opens count at 0.25 weight (max 20, last 90 days, genres + eras only, owner's view only). |
+| Last watch as a ticket | **Uncommitted** | Profile ticket + story image (`components/profile/last-watched/`, `server/profile/ticketStory.tsx`). Part of the onboarding release. |
+| Follows | **Live** | Approvals, Mutual / Follows you, Followed by, verified-only suggestions. |
+| Activity + notifications | **Live** | For you / Following tabs, grouped runs, privacy-safe fan-out, 60s polling + SSE. |
+| Reviews + ratings | **Live** | Half stars, spoiler gate, moderation. |
+| Watchlist collaboration + invites | **Not started** | Roadmap phase 4. |
+| Watch-party events | **Not started** | Roadmap phase 5. |
+| Watchly Wrapped | **Parked** | Plan in `docs/watchly-wrapped-plan.md`. Must start by early November to launch 1–3 December. |
+
+### Account, settings, trust
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Onboarding revamp ("Admit One") | **Uncommitted** | Start with titles you love, 3-field signup, venue / screens / name on the stub, tonight's feature. Migration `0044_onboarding_events` must run on prod. |
+| Email redesign | **Uncommitted** | Ticket-style emails, Welcome after verify, POST-confirm token pages. Migration `0045_users_verified_at` must run on prod. |
+| Sign in | **Uncommitted** | Late-show sign-in page, "New here? Get your first ticket". |
+| Sidebar | **Live** | Discover + My Profile spine, Tonight ticket, sidebar settings. Confirm migration `0043` is applied on prod. |
+| Settings | **Live** | One page by question, sessions + sign-out-everywhere, notifications, What visitors see, Download my data, API tokens, theme synced across devices. |
+| Email verification / password reset / restore | **Live** | 7-day grace, hashed single-use tokens, 30-day restore. |
+| Scheduled hard-delete | **Open** | Still no cron; soft-deleted data lingers past 30 days. |
+| Maintenance mode | **Live** | DB-backed windows. |
+
+### Platform and ops
+
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Vercel plan | **Live** | Pro since 2026-10-23. Spend budget $0 on top of the $20 credit, Pause on. Day-one usage $0.34 (about $10/month pace). |
+| Crawler block (ISR overrun fix) | **Live** (8dbb992) | Middleware 403s non-preview crawlers; title page skips all-region providers; reel fetches only text-free/English images. Vercel Bot Protection + AI Bots on. |
+| Firewall custom rule | **Open (optional)** | Challenge rule on `/title/*` if ISR writes climb again. Watch after the next deploy (deploys empty the ISR cache). |
+| Observability Events | **Open (optional)** | Costs as much as ISR writes; turn off if the detailed queries aren't used. |
+| Rate limiting | **Live** | In-memory fixed window on auth, search, swipe, events, badges, export, username check. Redis still deferred. |
+| Typecheck | **Uncommitted, failing** | 4 errors in `src/services/auth/emailFlows.ts` from the email redesign; fix before committing that work. |
+| Demo account @bokki | **Time-bound** | Unverified; 7-day grace ends ~2026-10-27, then it needs verifying. |
+
+### Before the next commit
+
+The working tree holds several releases. Commit them separately, each with its changelog (`changelog` skill):
+
+1. Onboarding revamp + email redesign + last-watched ticket (`changelogs/2026-10-23.md` already drafted). Fix `emailFlows.ts` first; run migrations 0044 + 0045 on prod.
+2. Taste profile browsing signals, Review voice latest, Sort session bento grid (needs its own changelog).
+3. New & Coming Soon stays out until a variant is chosen.
 
 ---
 
@@ -101,7 +165,7 @@ A breakdown of what's done, what's in progress, and what needs attention. Pair w
 - **Anti-FOUC inline script** — terse vanilla-JS snippet (`THEME_INIT_SCRIPT`) rendered via `dangerouslySetInnerHTML` in `<head>` of the root layout. Reads localStorage synchronously and toggles `light` / `dark` class on `<html>` *before* React paints, so users never see a dark→light flash on reload. Falls back to `dark` if localStorage / matchMedia throws.
 - **Default = `dark`** for new users + anyone with no stored choice. Existing users keep seeing dark on first load; opting into `'system'` or `'light'` requires the picker. `<html className="dark" suppressHydrationWarning>` is the SSR baseline.
 - **Picker UI** at `/settings/appearance` — new 3-card row (System · Dark · Light) with icon + label + description per card. Currently-selected has a primary ring + check. Click instantly applies the theme via `setTheme` (visual immediate) and write-throughs the DB best-effort via `updateThemeAction` (toast on failure but no rollback — localStorage already saved). New Sun icon added to the Settings index alongside Region / Privacy / Account.
-- **Cross-device sync deferred (v2)**: DB column is written but not read on signin yet — localStorage stays authoritative across sessions on the same device. Cross-device pickup would need either (a) a cookie set server-side after signin that the anti-FOUC script reads or (b) a server-rendered class on `<html>` based on the user's stored theme. Either fits cleanly; current state is fine for single-device.
+- ✅ *(Since shipped: see Settings follow-ups.)* **Cross-device sync deferred (v2)**: DB column is written but not read on signin yet — localStorage stays authoritative across sessions on the same device. Cross-device pickup would need either (a) a cookie set server-side after signin that the anti-FOUC script reads or (b) a server-rendered class on `<html>` based on the user's stored theme. Either fits cleanly; current state is fine for single-device.
 
 ### Watchlists v2.1 — Status Enhancements + Notes + Board view — DONE
 - **Status enum extended** to 9 values. Added `paused`, `dropped`, `rewatch`, `waiting_for_episode`, `waiting_for_season` alongside the original `just_added | up_next | watching | finished`. Migration `0011_spotty_sister_grimm.sql` uses `ALTER TYPE ... ADD VALUE`. Order across all UI follows the watching journey (pre-watch → in-progress → on-hold → completed → re-experience → abandoned).
@@ -247,8 +311,8 @@ Tabs, gradient avatar, two-column dashboard, taste profile, `hideFavorites` hono
 - ✅ **Followers / Following tabs** — added to MyProfileClient alongside Overview / Watchlists / Favorites / Activity. `FollowListTabPanel` lazy-fetches via `listMyFollowersAction` / `listMyFollowingAction` and renders `UserListCard` rows with the viewer's follow state joined in one round-trip.
 
 Still open:
-- **"Taste signals" stat** — depends on a swipe feature that doesn't exist yet.
-- **Two-column dashboard for tabs other than Overview** — Overview is 2-col; other tabs stay full-width by design. Reconsider if they start feeling sparse.
+- ✅ **"Taste signals" stat** — *(2026-10-24: done. Swipe stats show in By the numbers on your own profile.)*
+- ~~**Two-column dashboard for tabs other than Overview**~~ — *(2026-10-24: superseded by the profile redesign: Profile / Library / Reviews / Likes tabs.)*
 
 ---
 
@@ -273,7 +337,7 @@ Privacy, Account, Delete, and Theme toggle shipped. **Newly shipped:**
 - ✅ **Preferences (selected providers)** — jsonb array of TMDB provider IDs on `user_preferences.selectedProviders`. UI on `/settings/preferences` + modal entry point from For You. Feeds the For You scoring filter.
 
 Still open:
-- **Scheduled hard-delete job** — soft-delete sets `users.deletedAt`. A cron should permanently delete data after 30 days. Not built; data lingers until manual cleanup.
+- **Scheduled hard-delete job** — soft-delete sets `users.deletedAt`. A cron should permanently delete data after 30 days. Not built; data lingers until manual cleanup. *(2026-10-24: still open. The only cron is title alerts.)*
 
 ---
 
@@ -285,7 +349,7 @@ v2 shipped (full scoring formula, per-seed "Because You Added" rows, Quick Picks
 - ✅ **`/api/v1/for-you` REST route** — accepts session cookie or `Authorization: Bearer wkly_*`. Unified via `resolveRequestingUser`.
 
 Still open:
-- **"Not Interested" / hidden titles** — schema for `user_hidden_titles` (userId, tmdbId, mediaType, hiddenAt). Would feed the scoring formula's `−10 already hidden` penalty and let users dismiss bad recs.
+- **"Not Interested" / hidden titles** — schema for `user_hidden_titles` (userId, tmdbId, mediaType, hiddenAt). Would feed the scoring formula's `−10 already hidden` penalty and let users dismiss bad recs. *(2026-10-24: still open. The reel rests skipped titles for 7 days, but nothing hides a title for good.)*
 
 ---
 
@@ -324,8 +388,8 @@ Still open:
 - ✅ Pre-existing `react-hooks/set-state-in-effect` lint errors silenced with explanatory disables on the 3 legitimate "fetch-on-open" + "did-mount" patterns.
 
 Still open:
-- **API response shape unification** — `{ success, error: string }` shipped vs `.cursorrules.md`'s target `{ ok, error: { code, message } }`. Pick one canonical shape.
-- **Server actions vs REST per feature** — both coexist; map and decide.
+- **API response shape unification** — `{ success, error: string }` shipped vs `.cursorrules.md`'s target `{ ok, error: { code, message } }`. Pick one canonical shape. *(2026-10-24: still open; `{ success, data }` remains the real shape.)*
+- **Server actions vs REST per feature** — both coexist; map and decide. *(2026-10-24: still open.)*
 
 ---
 
@@ -336,12 +400,12 @@ Spot-verified against the codebase. False-positives from the raw audit (e.g. "si
 ### HIGH
 - ✅ **Error response leaks internal messages** — `handleRoute` now scrubs `err.message` on non-AppError throws; the title, collection (×3), TV season/episode, and TMDB search routes returned `details: err.message` directly and were rewritten to log via the structured logger + return a generic client message.
 - ✅ **Avatar upload MIME check is client-controlled** — `/api/me/avatar/route.ts` now magic-byte sniffs via `file-type` (allowlisted to JPEG/PNG/WebP/GIF/AVIF/HEIC) before handing the buffer to sharp. The old `file.type.startsWith('image/')` early-exit is gone.
-- **TMDB search fan-out unbounded** — `src/services/tmdb/search.ts` fetches 3 pages × ~20 results and per-result watch-providers (≤5 at a time). Unauthenticated; no caller-level cap. A single attacker can saturate the 50 req/sec TMDB key. **Mitigation lives with the deferred rate-limit work.**
+- **TMDB search fan-out unbounded** — `src/services/tmdb/search.ts` fetches 3 pages × ~20 results and per-result watch-providers (≤5 at a time). Unauthenticated; no caller-level cap. A single attacker can saturate the 50 req/sec TMDB key. **Mitigation lives with the deferred rate-limit work.** *(2026-10-24: mitigated. `tmdbSearch` limiter, 30/min per user or IP.)*
 
 ### MEDIUM
 - ✅ **Log redaction shallow** — `lib/log.ts` now deep-walks (depth cap 6, cycle guard, Error special-case) and matches both sensitive key substrings (`password / token / secret / apikey / auth / salt / digest / cookie / session`) **and** sensitive value shapes (`wkly_*`, Bearer headers, hex-64 digests, JWT shape). Applied uniformly across info/warn/error.
 - ✅ **Reset-password no-enumeration timing leak** — `services/auth/emailFlows.ts` now sleeps a randomized 80-260ms on the unknown-email branch of `sendPasswordResetEmail` and the unknown-userId branch of `sendRestoreAccountEmail`, masking the timing channel.
-- **TMDB client doesn't validate response Content-Type** — `src/server/tmdb/client.ts` parses any 2xx body as JSON. Low impact; deferred.
+- **TMDB client doesn't validate response Content-Type** — `src/server/tmdb/client.ts` parses any 2xx body as JSON. Low impact; deferred. *(2026-10-24: still open.)*
 - ✅ **Theme cookie TTL trimmed** — `watchly_theme` maxAge dropped from 365 → 90 days.
 
 ### LOW
@@ -381,7 +445,7 @@ In-memory fixed-window limiter shipped. Single-instance state (each warm Node co
 - Server-action rate limiting (follow/unfollow/block). Verification gate already gates the obvious script vector.
 - Migration to Redis. Stays in-memory until multi-instance traffic warrants it.
 
-### Endpoint risk inventory
+### Endpoint risk inventory (historical — every row below is now limited; see the coverage table)
 
 | Endpoint | Currently limited? | Risk |
 | -------- | ------------------ | ---- |
@@ -395,7 +459,7 @@ In-memory fixed-window limiter shipped. Single-instance state (each warm Node co
 | `GET /api/v1/tmdb/search` | No | **Critical** — fans out to TMDB provider calls per result, drains the 50 req/sec key |
 | `POST /api/v1/auth/follow*` (action layer) | Verification gate only | **Medium** — repeat follow/unfollow churn |
 
-### Plan
+### Plan (superseded — shipped in-memory instead of Upstash)
 1. Install `@upstash/ratelimit` + `@upstash/redis`. Use Upstash REST API (works from Edge runtime).
 2. Add `getClientIp(request)` helper to read `cf-connecting-ip` → `x-forwarded-for` → `x-real-ip`, with a `'unknown'` fallback.
 3. Wrap critical handlers with a small `withRateLimit(handler, { limiter })` decorator. Initial buckets:
@@ -417,11 +481,11 @@ In-memory fixed-window limiter shipped. Single-instance state (each warm Node co
 ### MEDIUM-IMPACT
 - ✅ **`<Image fill>` without `sizes`** — added in `CollectionCard.tsx` (backdrop + poster) and `TvSeasonsEpisodesPanel.tsx` (season poster grid + episode still).
 - ✅ **`router.push` to routes without `loading.tsx`** — addressed by the loading sweep above.
-- **No Suspense streaming on heavy server pages** — `/title/[mediaType]/[id]` parallelizes the final fetch but resolves region serially first. Still open; defer until we see measurable cold-fetch impact.
+- **No Suspense streaming on heavy server pages** — `/title/[mediaType]/[id]` parallelizes the final fetch but resolves region serially first. Still open; defer until we see measurable cold-fetch impact. *(2026-10-24: still open, but lower priority now that the title page is ISR-cached for 24h.)*
 
 ### LOW-IMPACT / NICE-TO-HAVE
-- **Dynamic-import heavy client libs** — `@dnd-kit` (~50KB) ships with watchlists; `framer-motion` (~35KB) with LandingNav. Code-split via `next/dynamic` on the leaf component. Defer.
-- **`tmdbFetch` revalidate = 3600s** — fine for cards; verify hit rate before tuning.
+- **Dynamic-import heavy client libs** — `@dnd-kit` (~50KB) ships with watchlists; `framer-motion` (~35KB) with LandingNav. Code-split via `next/dynamic` on the leaf component. Defer. *(2026-10-24: still open.)*
+- ✅ **`tmdbFetch` revalidate** — *(2026-10-24: catalog data now rides a 24h default; watch providers are pinned to 6h.)*
 - **Middleware overhead** — clean today (one cookie check + array `.some()`). No action.
 
 ---
@@ -430,4 +494,4 @@ In-memory fixed-window limiter shipped. Single-instance state (each warm Node co
 
 | File | TODO |
 | ---- | ---- |
-| `src/constants/providerStyles.ts:22` | Confirm IDs with the dev route later |
+| `src/constants/providerStyles.ts:22` | Confirm IDs with the dev route later *(2026-10-24: still open)* |

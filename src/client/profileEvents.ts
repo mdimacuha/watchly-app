@@ -13,6 +13,7 @@ export type ProfileEventKind =
   | 'watched_date_edited'
   | 'watched_removed'
   | 'watched_logged'
+  | 'ticket_swapped'
   | 'watched_backfilled'
   | 'notifications_viewed'
   | 'notification_opened'

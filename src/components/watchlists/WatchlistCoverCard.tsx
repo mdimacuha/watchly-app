@@ -36,8 +36,8 @@ export function WatchlistsHeader(p: {
     <header className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-h2">Watchlists</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="type-display text-6xl text-foreground sm:text-7xl">Watchlists</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
             {plural(stats.lists, 'curated list')}
             {stats.latest && <> · last updated {formatRelativeAgo(stats.latest)}</>}
           </p>

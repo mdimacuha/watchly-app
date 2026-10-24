@@ -14,22 +14,30 @@ const STORY_ENDPOINT = '/api/me/profile/story';
 
 type Story = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; blob: Blob; url: string };
 
+/** What the story shows: the member card ("card") or the last-watched ticket ("ticket"). */
+export type StoryKind = 'card' | 'ticket';
+
 /**
- * Owner-only "Export" (icon) beside Share: renders the profile as a 9:16
- * Instagram story server-side, previews it in a modal, then downloads it —
- * or, where the browser can share files (most phones), hands it straight to
- * the share sheet so it can go to an Instagram story in one tap.
+ * Owner-only "Export" (icon): renders the profile, or the last-watched
+ * ticket, as a 9:16 Instagram story server-side, previews it in a modal, then
+ * downloads it — or, where the browser can share files (most phones), hands
+ * it straight to the share sheet so it can go to an Instagram story in one tap.
  */
 export function StoryExportButton({
   userId,
   username,
   accent,
   className,
+  kind = 'card',
+  label,
 }: {
   userId: string;
   username: string;
   accent: AccentColor | null;
   className: string;
+  kind?: StoryKind;
+  /** Visible text beside the icon; icon-only when omitted. */
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -38,30 +46,34 @@ export function StoryExportButton({
         type="button"
         className={className}
         onClick={() => setOpen(true)}
-        aria-label="Export as Instagram story"
+        aria-label={kind === 'ticket' ? 'Export this ticket as an Instagram story' : 'Export as Instagram story'}
         title="Export as story"
       >
         <ImageDown className="h-4 w-4" />
+        {label}
       </button>
       <Modal isOpen={open} onClose={() => setOpen(false)} className="max-w-sm border border-border bg-card">
         {/* Portaled to <body>, outside the page's AccentScope — re-apply the
             owner's accent. Mounted only while open: each open is a fresh render. */}
-        <AccentScope accentColor={accent}>{open && <StoryPreview userId={userId} username={username} />}</AccentScope>
+        <AccentScope accentColor={accent}>{open && <StoryPreview userId={userId} username={username} kind={kind} />}</AccentScope>
       </Modal>
     </>
   );
 }
 
-function StoryPreview({ userId, username }: { userId: string; username: string }) {
+function StoryPreview({ userId, username, kind }: { userId: string; username: string; kind: StoryKind }) {
   const toast = useToast();
   const [story, setStory] = useState<Story>({ kind: 'loading' });
   const [nonce, setNonce] = useState(0);
-  const fileName = `watchly-${username}-story.png`;
+  const fileName = `watchly-${username}-${kind === 'ticket' ? 'ticket' : 'story'}.png`;
+  // The ticket's times are printed in the owner's timezone, which only the browser knows.
+  const endpoint =
+    kind === 'ticket' ? `${STORY_ENDPOINT}?kind=ticket&tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}` : STORY_ENDPOINT;
 
   useEffect(() => {
     let url: string | null = null;
     const controller = new AbortController();
-    fetch(STORY_ENDPOINT, { signal: controller.signal, cache: 'no-store' })
+    fetch(endpoint, { signal: controller.signal, cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) throw new Error('render failed');
         const blob = await res.blob();
@@ -75,7 +87,7 @@ function StoryPreview({ userId, username }: { userId: string; username: string }
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [nonce]);
+  }, [nonce, endpoint]);
 
   const file = story.kind === 'ready' ? new File([story.blob], fileName, { type: 'image/png' }) : null;
   const canShareFile = typeof navigator !== 'undefined' && !!file && !!navigator.canShare?.({ files: [file] });
@@ -86,14 +98,14 @@ function StoryPreview({ userId, username }: { userId: string; username: string }
     a.href = story.url;
     a.download = fileName;
     a.click();
-    trackProfile(userId, 'share', undefined, { channel: 'story_download' });
+    trackProfile(userId, 'share', undefined, { channel: 'story_download', story: kind });
   };
 
   const shareFile = async () => {
     if (!file) return;
     try {
-      await navigator.share({ files: [file], title: 'My Watchly card' });
-      trackProfile(userId, 'share', undefined, { channel: 'story_share' });
+      await navigator.share({ files: [file], title: kind === 'ticket' ? 'My last Watchly ticket' : 'My Watchly card' });
+      trackProfile(userId, 'share', undefined, { channel: 'story_share', story: kind });
     } catch (err) {
       // AbortError = the user closed the share sheet; anything else, fall back.
       if ((err as Error).name !== 'AbortError') toast.error("Couldn't open sharing", 'Use Download instead.');
@@ -103,7 +115,7 @@ function StoryPreview({ userId, username }: { userId: string; username: string }
   return (
     <div className="flex flex-col">
       <header className="px-5 pt-5 pr-12">
-        <h2 className="text-lg font-semibold leading-tight">Share your card</h2>
+        <h2 className="text-lg font-semibold leading-tight">{kind === 'ticket' ? 'Share your ticket' : 'Share your card'}</h2>
         <p className="mt-1 text-sm text-muted-foreground">Sized for an Instagram story.</p>
       </header>
 
@@ -137,7 +149,9 @@ function StoryPreview({ userId, username }: { userId: string; username: string }
 
       <p className="mx-5 mt-3 flex items-start gap-2 text-xs text-muted-foreground">
         <Eye className="mt-px h-3.5 w-3.5 shrink-0" />
-        Includes your Watchly Swipe stats, which are normally only visible to you.
+        {kind === 'ticket'
+          ? 'Includes the times you started and logged it, and a QR code to your profile.'
+          : 'Includes your Watchly Swipe stats, which are normally only visible to you.'}
       </p>
 
       <div className="mt-4 flex gap-2 border-t border-border p-4">

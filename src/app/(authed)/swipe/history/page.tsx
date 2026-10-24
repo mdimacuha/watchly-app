@@ -22,7 +22,7 @@ export default async function SwipeHistoryPage() {
 
       <div className="flex items-center gap-3">
         <History size={22} className="text-primary" />
-        <h1 className="text-h2">Swipe history</h1>
+        <h1 className="type-display text-5xl text-foreground sm:text-6xl">Swipe history</h1>
       </div>
       <p className="text-sm text-muted-foreground -mt-2">
         Everything you&apos;ve swiped, newest first. Filter by what you did,

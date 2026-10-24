@@ -1,6 +1,6 @@
 'use client';
 
-// Profile → Likes: titles liked in Watchly Swipe and the For You reel, merged
+// Profile → Likes: titles liked in Watchly Swipe, the For You reel and onboarding, merged
 // newest first. Wide screens: a poster wall (title on hover) beside a details
 // panel for the selected title. Phones: captioned posters, no hover needed.
 // Scrolls inside a fixed-height box and loads the next page near the end.
@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeftRight, ArrowUpRight, Eye, Heart, HeartOff, Loader2, Lock, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpRight, Eye, Heart, HeartOff, Loader2, Lock, Sparkles, Ticket } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { buildImageUrl } from '@/lib/tmdb';
 import { formatRelativeAgo } from '@/lib/format';
@@ -24,11 +24,13 @@ const FILTERS: [Filter, string][] = [
   ['all', 'All'],
   ['swipe', 'Watchly Swipe'],
   ['reel', 'For You'],
+  ['onboarding', 'Watchly Onboarding'],
 ];
 
 const ORIGIN = {
   swipe: { label: 'Watchly Swipe', short: 'Swipe', Icon: ArrowLeftRight },
   reel: { label: 'For You', short: 'For You', Icon: Sparkles },
+  onboarding: { label: 'Watchly Onboarding', short: 'Onboarding', Icon: Ticket },
 } as const;
 
 const WIDE = '(min-width: 1024px)';
@@ -92,7 +94,8 @@ export function ProfileLikes({ username, owner, preview, hidden }: Props) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5" role="group" aria-label="Filter likes">
-          {FILTERS.map(([f, label]) => (
+          {/* Onboarding only shows for people who picked titles at signup. */}
+          {FILTERS.filter(([f]) => f !== 'onboarding' || feed.origins?.includes('onboarding')).map(([f, label]) => (
             <button
               key={f}
               type="button"
@@ -142,6 +145,8 @@ function useLikes(username: string, preview: boolean, filter: Filter) {
   const [state, setState] = useState<FeedState>({ for: filter, items: [], hasMore: true, failed: false });
   const [loading, setLoading] = useState(false);
   const busy = useRef(false);
+  // Sources this profile has likes from (first unfiltered page); null until known.
+  const [origins, setOrigins] = useState<LikeOrigin[] | null>(null);
   // A new filter starts from an empty page; its first load replaces this.
   const current: FeedState = state.for === filter ? state : { for: filter, items: [], hasMore: true, failed: false };
 
@@ -154,14 +159,15 @@ function useLikes(username: string, preview: boolean, filter: Filter) {
       origin: filter === 'all' ? undefined : filter,
       asGuest: preview,
     })
-      .then((page) =>
+      .then((page) => {
+        if (page.origins) setOrigins(page.origins);
         setState((s) => ({
           for: filter,
           items: [...(s.for === filter ? s.items : []), ...page.items],
           hasMore: page.hasMore,
           failed: false,
-        })),
-      )
+        }));
+      })
       .catch(() => setState((s) => ({ for: filter, items: s.for === filter ? s.items : [], hasMore: true, failed: true })))
       .finally(() => {
         busy.current = false;
@@ -171,7 +177,7 @@ function useLikes(username: string, preview: boolean, filter: Filter) {
 
   const retry = () => setState((s) => ({ ...s, failed: false }));
 
-  return { ...current, loading, loadMore, retry };
+  return { ...current, origins, loading, loadMore, retry };
 }
 
 type Feed = ReturnType<typeof useLikes>;

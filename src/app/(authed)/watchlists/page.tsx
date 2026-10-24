@@ -1,4 +1,4 @@
-import { listWatchlistsAction } from '@/actions/watchlists';
+import { getAttentionAction, listWatchlistsAction } from '@/actions/watchlists';
 import { WatchlistsPageClient } from '@/components/watchlists/WatchlistsPageClient';
 import { requireUser } from '@/server/auth/requireUser';
 import { AccentScope } from '@/components/profile/AccentScope';
@@ -9,16 +9,18 @@ export default async function WatchlistsPage() {
   const userId = await requireUser();
   // Accent comes from the shared per-user cache the layouts already use,
   // instead of a fresh DB query on every visit.
-  const [watchlists, accentColor] = await Promise.all([
+  const [watchlists, accentColor, attention] = await Promise.all([
     // First 12 poster previews per list for the cover scrub (the rest load
     // on hover via getWatchlistPreviewsAction) + watched / total runtime.
     listWatchlistsAction({ previews: 12, runtimes: true }),
     getAccentColorFor(userId),
+    // Needs your attention, under the stats (owner's own lists only).
+    getAttentionAction(),
   ]);
 
   return (
     <AccentScope accentColor={accentColor} className="px-4 sm:px-8 py-10 max-w-6xl mx-auto w-full">
-      <WatchlistsPageClient watchlists={watchlists} />
+      <WatchlistsPageClient watchlists={watchlists} attention={attention} />
     </AccentScope>
   );
 }

@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   return handleRoute(async () => {
     const body = await request.json();
-    const { user, regionCode, theme, sessionToken, sessionExpiresAt, persistent } =
+    const { user, regionCode, theme, onboardingCompleted, sessionToken, sessionExpiresAt, persistent } =
       await signIn(body, { userAgent: request.headers.get('user-agent') });
 
     // Keep the cookie's persistence in sync with the DB session TTL chosen by
@@ -23,6 +23,6 @@ export async function POST(request: Request) {
     // — even on a device that has never signed in before.
     if (theme) await setThemeCookie(theme);
 
-    return { user, regionCode, theme };
+    return { user, regionCode, theme, onboardingCompleted };
   });
 }

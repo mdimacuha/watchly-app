@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getEnrichedWatchlistAction } from '@/actions/watchlists';
+import { getAttentionAction, getEnrichedWatchlistAction } from '@/actions/watchlists';
 import { WatchlistDetailClient } from '@/components/watchlists/WatchlistDetailClient';
 import { AccentScope } from '@/components/profile/AccentScope';
 import { normalizeAccentColor } from '@/constants/accentColors';
@@ -57,6 +57,8 @@ export default async function WatchlistDetailPage({ params }: PageProps) {
   }
 
   const { watchlist, items, isOwner, owner } = payload;
+  // Tidy up suggestions: the owner's only.
+  const attention = isOwner ? await getAttentionAction(id).catch(() => null) : null;
   return (
     <AccentScope
       accentColor={normalizeAccentColor(owner.accentColor)}
@@ -67,6 +69,7 @@ export default async function WatchlistDetailPage({ params }: PageProps) {
         items={items}
         isOwner={isOwner}
         owner={owner}
+        attention={attention}
       />
     </AccentScope>
   );

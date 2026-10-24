@@ -82,6 +82,10 @@ const RECENT_FAVORITES_LIMIT = 6;
 const RECENT_WATCHLISTS_LIMIT = 3;
 const RECENT_ACTIVITY_LIMIT = 5;
 const TASTE_SAMPLE_LIMIT = 50;
+/** Browsing titles (search opens, For You views) sampled on top of the explicit ones. */
+const BROWSING_SAMPLE_LIMIT = 20;
+/** A browsing title counts this much of a favorite / watched / swiped title. */
+const BROWSING_WEIGHT = 0.25;
 const TASTE_REVALIDATE_SECONDS = 3600;
 const TOP_GENRES = 5;
 const TOP_DECADES = 3;
@@ -94,10 +98,14 @@ export interface TasteProfile {
   decades: string[];
   /** Top streaming providers (flatrate) the user's favorites are available on. */
   providers: string[];
-  /** Genres with how many sampled titles carry them — for weighted "Taste DNA" bars. */
+  /**
+   * Genres with their weighted tally — for "Taste DNA" bars. A saved or
+   * watched title adds 1, a browsing title BROWSING_WEIGHT, so counts can be
+   * fractional.
+   */
   genreWeights?: { name: string; count: number }[];
   decadeWeights?: { name: string; count: number }[];
-  /** How many titles the profile was computed from. */
+  /** How many titles the profile was computed from (browsing included). */
   sampleSize?: number;
 }
 
@@ -160,7 +168,7 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
     throw new ValidationAppError('Invalid profile input', parsed.error.flatten());
   }
 
-  const { displayName, bio, avatarUrl, accentColor, cardFeature } = parsed.data;
+  const { displayName, firstName, lastName, bio, avatarUrl, accentColor, cardFeature } = parsed.data;
 
   // Moderate public-facing text. Display name is required + bounded;
   // bio is optional + longer. Generic external message on slur /
@@ -199,6 +207,23 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
           bioCheck.reason === 'racial_offensive'
           ? 'This bio is not allowed.'
           : bioCheck.message ?? 'Invalid bio.',
+      );
+    }
+  }
+
+  // Names are public-facing too (profiles, reviews): same gate as signup.
+  for (const [field, value] of [
+    ['first name', firstName],
+    ['last name', lastName],
+  ] as const) {
+    if (!value) continue;
+    const m = moderateText(value, { minLength: 1, maxLength: 50 });
+    if (!m.allowed) {
+      logger.warn('[profile] name rejected', { userId, field, reason: m.reason });
+      throw new ValidationAppError(
+        m.reason === 'profanity' || m.reason === 'racial_offensive'
+          ? `This ${field} is not allowed.`
+          : m.message ?? `Invalid ${field}.`,
       );
     }
   }
@@ -248,7 +273,13 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
     // accurate after the user re-hydrates.
     await tx
       .update(users)
-      .set({ avatarUrl: normalizedAvatar, updatedAt: new Date() })
+      .set({
+        avatarUrl: normalizedAvatar,
+        // first_name is NOT NULL: a blank one leaves the stored value alone.
+        ...(firstName && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, userId));
 
     return updatedProfile;
@@ -381,6 +412,11 @@ interface WatchProvidersBlock {
  * Providers are tallied from the user's region's flatrate only (no
  * fallback to another country).
  *
+ * Browsing (titles opened from search, reel trailers watched, titles opened
+ * in For You) only nudges: each such title adds BROWSING_WEIGHT to genres
+ * and decades, never to providers (searching a title says nothing about
+ * where you watch), and it never builds a profile on its own.
+ *
  * Cached per user + region + visible sources: building it costs up to
  * TASTE_SAMPLE_LIMIT TMDB reads, and every profile visit needs one or two
  * (owner's taste, viewer's taste for the match). Tagged with the For You
@@ -392,8 +428,8 @@ export async function getTasteProfile(
   options: Parameters<typeof computeTasteProfile>[1] = {},
 ): Promise<TasteProfile> {
   const region = options.region ?? 'US';
-  const sources = options.sources ?? { favorites: true, watched: true, swipes: true };
-  const sourcesKey = `${+sources.favorites}${+sources.watched}${+sources.swipes}`;
+  const sources = options.sources ?? { favorites: true, watched: true, swipes: true, browsing: true };
+  const sourcesKey = `${+sources.favorites}${+sources.watched}${+sources.swipes}${+sources.browsing}`;
   return unstable_cache(
     () => computeTasteProfile(userId, { region, sources }),
     ['taste-profile', userId, region, sourcesKey],
@@ -409,16 +445,16 @@ async function computeTasteProfile(
      * Which private signals may feed the result. Defaults to all (the
      * owner's own view). Public views must pass the owner's privacy
      * choices — a taste profile built from hidden favorites/watched (or
-     * swipes, which are never public) leaks them.
+     * swipes and browsing, which are never public) leaks them.
      */
-    sources?: { favorites: boolean; watched: boolean; swipes: boolean };
+    sources?: { favorites: boolean; watched: boolean; swipes: boolean; browsing: boolean };
   } = {},
 ): Promise<TasteProfile> {
   const region = options.region ?? 'US';
-  const sources = options.sources ?? { favorites: true, watched: true, swipes: true };
+  const sources = options.sources ?? { favorites: true, watched: true, swipes: true, browsing: true };
 
-  // Sample sources in parallel — all three are bounded reads.
-  const [favorites, watchedEntries, swipeSignals] = await Promise.all([
+  // Sample sources in parallel — all four are bounded reads.
+  const [favorites, watchedEntries, swipeSignals, browsing] = await Promise.all([
     sources.favorites ? getFavorites(userId, { limit: TASTE_SAMPLE_LIMIT }) : Promise.resolve([]),
     sources.watched
       ? import('@/services/watched').then((m) => m.getWatchedEntries(userId))
@@ -426,13 +462,19 @@ async function computeTasteProfile(
     sources.swipes
       ? import('@/services/swipe').then((m) => m.getSwipeSignals(userId))
       : Promise.resolve({ liked: [], saved: [], passed: [], opened: [] }),
+    sources.browsing
+      ? import('./browsingSignals')
+          .then((m) => m.getBrowsingSignals(userId))
+          // A nudge, not a dependency: the profile builds without it.
+          .catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   // Inputs = favorites ∪ watched ∪ saved-swipes ∪ liked-swipes. Order
   // matters: stronger signals first, since once we hit
   // TASTE_SAMPLE_LIMIT we stop adding. Dedup so a title appearing in
   // multiple sources contributes one tally per facet, not three.
-  type TasteInput = { mediaType: 'movie' | 'tv'; mediaId: string };
+  type TasteInput = { mediaType: 'movie' | 'tv'; mediaId: string; weight: number };
   const seen = new Set<string>();
   const inputs: TasteInput[] = [];
 
@@ -441,7 +483,7 @@ async function computeTasteProfile(
     const key = `${f.favoriteType}:${f.favoriteId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    inputs.push({ mediaType: f.favoriteType, mediaId: f.favoriteId });
+    inputs.push({ mediaType: f.favoriteType, mediaId: f.favoriteId, weight: 1 });
     if (inputs.length >= TASTE_SAMPLE_LIMIT) break;
   }
   for (const w of watchedEntries) {
@@ -449,7 +491,7 @@ async function computeTasteProfile(
     const key = `${w.mediaType}:${w.mediaId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    inputs.push({ mediaType: w.mediaType, mediaId: w.mediaId });
+    inputs.push({ mediaType: w.mediaType, mediaId: w.mediaId, weight: 1 });
   }
   // Swipes flow in last so they only consume sample slots when there's
   // headroom after favorites + watched. Saved first (stronger intent)
@@ -461,10 +503,24 @@ async function computeTasteProfile(
     const key = `${s.titleType}:${s.titleId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    inputs.push({ mediaType: s.titleType, mediaId: s.titleId });
+    inputs.push({ mediaType: s.titleType, mediaId: s.titleId, weight: 1 });
   }
 
+  // Browsing never builds a profile on its own — with nothing saved or
+  // watched, one search shouldn't decide someone's taste.
   if (inputs.length === 0) return { genres: [], decades: [], providers: [] };
+
+  // Browsing rides on top of the explicit sample (its own small cap), so it
+  // nudges heavy users too instead of only filling leftover slots.
+  let browsingAdded = 0;
+  for (const b of browsing) {
+    if (browsingAdded >= BROWSING_SAMPLE_LIMIT) break;
+    const key = `${b.mediaType}:${b.mediaId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    inputs.push({ mediaType: b.mediaType, mediaId: b.mediaId, weight: BROWSING_WEIGHT });
+    browsingAdded++;
+  }
 
   const genreCounts = new Map<string, number>();
   const decadeCounts = new Map<string, number>();
@@ -484,7 +540,7 @@ async function computeTasteProfile(
 
         for (const g of raw.genres ?? []) {
           if (g.name) {
-            genreCounts.set(g.name, (genreCounts.get(g.name) ?? 0) + 1);
+            genreCounts.set(g.name, (genreCounts.get(g.name) ?? 0) + input.weight);
           }
         }
         const date =
@@ -493,9 +549,12 @@ async function computeTasteProfile(
           const year = parseInt(date.slice(0, 4), 10);
           if (!Number.isNaN(year)) {
             const decade = `${Math.floor(year / 10) * 10}s`;
-            decadeCounts.set(decade, (decadeCounts.get(decade) ?? 0) + 1);
+            decadeCounts.set(decade, (decadeCounts.get(decade) ?? 0) + input.weight);
           }
         }
+
+        // Browsing says nothing about which services someone watches on.
+        if (input.weight < 1) return;
 
         // Tally flatrate provider names for the user's region only. Each
         // input contributes at most one count per provider — multiple tiers
@@ -694,7 +753,7 @@ export async function getPublicProfileOverview(
       region: profile.region,
       sources: isSelf
         ? undefined
-        : { favorites: showFavoritesToViewer, watched: showWatchedToViewer, swipes: false },
+        : { favorites: showFavoritesToViewer, watched: showWatchedToViewer, swipes: false, browsing: false },
     }),
     // Social calls — dynamic import to keep this file's static graph small.
     import('@/services/social').then((m) => m.getFollowSummary(profile.userId)),

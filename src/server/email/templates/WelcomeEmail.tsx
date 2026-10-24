@@ -1,67 +1,39 @@
-import { Button, Section, Text } from '@react-email/components';
-import { EmailLayout } from './EmailLayout';
+import { EmailLayout, Paragraph, PrimaryButton, StubNote, greet } from './EmailLayout';
 
 interface WelcomeEmailProps {
-  recipientName: string;
-  /** Absolute URL the "Start searching" CTA points to. */
-  searchUrl: string;
+  recipientName: string | null;
+  /** Absolute, tagged URL to Tonight's Programme. */
+  programmeUrl: string;
+  siteUrl: string;
+  assetUrl?: string;
 }
 
 /**
- * Marketing welcome email fired once on signup. Uses the same
- * `EmailLayout` chrome as the transactional templates (verify /
- * password-reset / restore-account) so brand presentation stays
- * consistent across every email a user receives from Watchly.
+ * Sent once, the moment the email is confirmed (never at signup, where it
+ * would compete with the verify email). Points at one place: Tonight's
+ * Programme, the "what should I watch tonight?" answer.
  */
-export function WelcomeEmail({
-  recipientName,
-  searchUrl,
-}: WelcomeEmailProps) {
+export function WelcomeEmail({ recipientName, programmeUrl, siteUrl, assetUrl }: WelcomeEmailProps) {
   return (
     <EmailLayout
-      preview="Your personal streaming guide is ready — start searching now."
-      heading="Welcome to Watchly"
+      preview="Your email is confirmed. Tonight’s Programme has picks from what you love, and where they’re streaming."
+      kicker="Admit one · You’re in"
+      heading="Your seat is confirmed"
+      siteUrl={siteUrl}
+      assetUrl={assetUrl}
+      reason="You’re getting this once, because you just confirmed your Watchly email."
+      stub={
+        <StubNote label="Where to watch, any time">
+          Search any film or show and its page shows where it’s streaming in your country. Keep the ones for later in your Watchlists.
+        </StubNote>
+      }
     >
-      <Text style={paragraph}>
-        Hi {recipientName || 'there'} — your personal streaming guide is
-        ready. Sync your watchlists, track availability across 140+
-        regions, and never ask &quot;where can I watch this?&quot; again.
-      </Text>
-      <Section style={ctaSection}>
-        <Button href={searchUrl} style={button}>
-          Start searching
-        </Button>
-      </Section>
-      <Text style={paragraphMuted}>
-        New to Watchly? Try adding a favorite from search — Tonight&apos;s Programme
-        starts picking for you the moment you do.
-      </Text>
+      <Paragraph>{greet(recipientName)}, your email is confirmed, so Watchly is yours to keep.</Paragraph>
+      <Paragraph>
+        Start with Tonight’s Programme: picks built from what you love, each with where it’s streaming in your country. Every like on Swipe or the For You
+        reel sharpens it.
+      </Paragraph>
+      <PrimaryButton href={programmeUrl}>Open Tonight’s Programme</PrimaryButton>
     </EmailLayout>
   );
 }
-
-const paragraph: React.CSSProperties = {
-  color: '#e4e4e7',
-  fontSize: '15px',
-  lineHeight: '1.55',
-  margin: '0 0 16px',
-};
-const paragraphMuted: React.CSSProperties = {
-  color: '#a1a1aa',
-  fontSize: '13px',
-  lineHeight: '1.55',
-  margin: '24px 0 0',
-};
-const ctaSection: React.CSSProperties = {
-  textAlign: 'center',
-  margin: '28px 0 8px',
-};
-const button: React.CSSProperties = {
-  backgroundColor: '#3B4FFF',
-  color: '#ffffff',
-  borderRadius: '8px',
-  fontSize: '14px',
-  fontWeight: 600,
-  padding: '12px 22px',
-  textDecoration: 'none',
-};

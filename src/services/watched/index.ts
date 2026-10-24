@@ -137,6 +137,8 @@ export interface WatchedEntry {
   precision: WatchedPrecision;
   /** True when the member set the date by hand (it's no longer just the logged time). */
   confirmed: boolean;
+  /** When it was logged in Watchly (latest across both sources); never the hand-set date. */
+  loggedAt: Date;
 }
 
 /**
@@ -198,18 +200,24 @@ export async function getWatchedEntries(
         watchedAt: r.seenOn && r.seenPrecision !== 'unknown' ? seenOnToDate(r.seenOn) : r.watchedAt,
         precision: r.seenOn ? r.seenPrecision : 'unknown',
         confirmed: true,
+        loggedAt: r.watchedAt,
       });
     } else {
-      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.watchedAt, precision: 'day', confirmed: false });
+      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.watchedAt, precision: 'day', confirmed: false, loggedAt: r.watchedAt });
     }
   }
   for (const r of finished) {
     if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue;
     const key = `${r.mediaType}:${r.mediaId}`;
-    if (fixed.has(key) || !r.finishedAt) continue;
+    if (!r.finishedAt) continue;
     const existing = merged.get(key);
+    if (fixed.has(key)) {
+      // The hand-set date stays; a later list finish still counts as the latest log.
+      if (existing && r.finishedAt > existing.loggedAt) existing.loggedAt = r.finishedAt;
+      continue;
+    }
     if (!existing || r.finishedAt > existing.watchedAt) {
-      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.finishedAt, precision: 'day', confirmed: false });
+      merged.set(key, { mediaType: r.mediaType, mediaId: r.mediaId, watchedAt: r.finishedAt, precision: 'day', confirmed: false, loggedAt: r.finishedAt });
     }
   }
 

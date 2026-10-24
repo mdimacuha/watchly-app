@@ -50,6 +50,7 @@ import { formatRelativeAgo } from '@/lib/format';
 import type { ProfileShowcase } from '@/actions/profile';
 import type { InsightTitle } from '@/services/profile/insights';
 import { billingLine, estDate, memberCardModel, nameOf, rankedFavorites } from '@/components/profile/profileModel';
+import { TicketStack } from '@/components/profile/last-watched/TicketStack';
 
 interface Props {
   showcase: ProfileShowcase;
@@ -118,7 +119,19 @@ export function MemberProfile({ showcase, preview }: Props) {
         </div>
       )}
 
-      <MemberCard showcase={showcase} owner={owner} accent={accent} onAccent={setAccent} />
+      {/* The last-watched ticket sits under the member card when the watched list is visible. */}
+      {showcase.lastWatched ? (
+        <TicketStack
+          ticket={showcase.lastWatched}
+          owner={owner}
+          profileUserId={ownerId}
+          username={overview.profile.username}
+          accent={accent}
+          card={(still) => <MemberCard showcase={showcase} owner={owner} accent={accent} onAccent={setAccent} still={still} />}
+        />
+      ) : (
+        <MemberCard showcase={showcase} owner={owner} accent={accent} onAccent={setAccent} />
+      )}
       <MatchStrip showcase={showcase} />
       {owner && <PeopleYouMightKnow suggestions={showcase.followSuggestions} />}
 
@@ -209,7 +222,7 @@ const TILT_DEG = 6;
  * Subtle 3D tilt toward the pointer with an accent sheen that follows it.
  * Mouse/pen only (touch scrolls normally); off under reduced motion.
  */
-function TiltCard({ children }: { children: ReactNode }) {
+function TiltCard({ children, still }: { children: ReactNode; still?: boolean }) {
   const reduce = useReducedMotion();
   // Tilt follows the pointer and settles flat on leave.
   const px = useMotionValue(0.5);
@@ -224,7 +237,7 @@ function TiltCard({ children }: { children: ReactNode }) {
   const sheen = useMotionTemplate`radial-gradient(420px circle at ${sx}% ${sy}%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 60%)`;
 
   const move = (e: PointerEvent<HTMLDivElement>) => {
-    if (reduce || e.pointerType === 'touch') return;
+    if (reduce || still || e.pointerType === 'touch') return;
     const r = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
@@ -267,17 +280,20 @@ function MemberCard({
   owner,
   accent,
   onAccent,
+  still,
 }: {
   showcase: ProfileShowcase;
   owner: boolean;
   accent: AccentColor | null;
   onAccent: (a: AccentColor | null) => void;
+  /** Behind the last-watched ticket: no tilt. */
+  still?: boolean;
 }) {
   const p = showcase.overview.profile;
   const { feature, featureLabel, tally, stamps, country } = memberCardModel(showcase);
 
   return (
-    <TiltCard>
+    <TiltCard still={still}>
       {/* Half-circle notches punched into the edge: they sit inside the card
           (covering the 1px gradient border) with an accent edge that continues
           the outline — nothing pokes out past the card. */}
@@ -712,7 +728,7 @@ function ByTheNumbers({ showcase }: { showcase: ProfileShowcase }) {
               <span className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
                 <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.round((w.count / max) * 100)}%` }} />
               </span>
-              <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">{w.count}</span>
+              <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">{Math.round(w.count)}</span>
             </li>
           ))}
         </ul>
@@ -752,7 +768,7 @@ function ByTheNumbers({ showcase }: { showcase: ProfileShowcase }) {
     });
   }
   if (insights.reviews.count > 0) {
-    // The featured (best-rated written) review, shown like Coming soon: its
+    // The featured (latest written) review, shown like Coming soon: its
     // title's backdrop behind, poster + quote along the bottom.
     const top = insights.reviews.top;
     frames.push({

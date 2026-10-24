@@ -5,14 +5,14 @@ import { revalidatePath } from 'next/cache';
 import { getSession } from '@/server/auth/session';
 import { UnauthorizedAppError, ValidationAppError } from '@/utils/errors';
 import { SWIPE_SOURCES, TITLE_TYPES } from '@/services/swipe/constants';
-import type { ProfileLike, RemovedLike } from '@/services/swipe/likes';
+import type { LikesPage, RemovedLike } from '@/services/swipe/likes';
 
 // The profile's Likes tab. Reads follow the profile's visibility rules (owner
 // always; visitors only when "Show my likes" is on); changes are owner-only.
 
 const pageSchema = z.object({
   before: z.string().datetime().optional(),
-  origin: z.enum(['swipe', 'reel']).optional(),
+  origin: z.enum(['swipe', 'reel', 'onboarding']).optional(),
   asGuest: z.boolean().optional(),
 });
 
@@ -20,7 +20,7 @@ const pageSchema = z.object({
 export async function getProfileLikesPageAction(
   username: string,
   input: unknown = {},
-): Promise<{ items: ProfileLike[]; hasMore: boolean }> {
+): Promise<LikesPage> {
   const parsed = pageSchema.safeParse(input);
   if (!parsed.success) throw new ValidationAppError('Invalid likes query', parsed.error.flatten());
   const session = await getSession();
