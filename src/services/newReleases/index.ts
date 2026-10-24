@@ -89,14 +89,16 @@ export interface NewFeed {
 
 const DETAIL_CACHE = { revalidate: 21600 } as const; // 6h: next episodes change on air days
 const MY_SHOWS_MAX = 30;
-const POPULAR_SHOWS_MAX = 30;
+const POPULAR_SHOWS_MAX = 20;
 const FILMS_MAX = 24;
 const FILMS_BUFFER = 8; // shared extras, so taking out the member's own films leaves the board full
 const CHANNELS_MAX = 14;
 // TMDB network ids of the big streamers, for their originals this week.
 const STREAMING_NETWORKS = [213 /* Netflix */, 49 /* HBO */, 3186 /* Max */, 2739 /* Disney+ */, 2552 /* Apple TV+ */, 1024 /* Prime Video */, 453 /* Hulu */, 4330 /* Paramount+ */, 3353 /* Peacock */];
 const STREAMING_IDS = new Set(STREAMING_NETWORKS);
-const STREAMING_SHOWS_MAX = 40; // candidates; the ones not streaming in the country drop out
+const STREAMING_SHOWS_MAX = 28; // candidates; the ones not streaming in the country drop out
+/** TMDB lookups in flight at once while building (well under its rate limit). */
+const LOOKUPS_IN_FLIGHT = 12;
 // Talk, news, reality, soap and kids: nightly/daily filler that would fill a
 // popular guide with noise. Never filtered from the member's own shows.
 const FILLER_GENRES = new Set([10767, 10763, 10764, 10766, 10762]);
@@ -212,7 +214,7 @@ async function sharedFilms(region: string, today: string, tally: Tally): Promise
   if (pages.every((p) => !p)) throw new Error('film lists unavailable');
   const ids = new Set<number>();
   for (const page of pages) for (const r of page?.results ?? []) ids.add(r.id);
-  const films = await mapWithConcurrency([...ids].slice(0, 70), 8, (id) => filmFor(id, region, today, false, tally));
+  const films = await mapWithConcurrency([...ids].slice(0, 50), LOOKUPS_IN_FLIGHT, (id) => filmFor(id, region, today, false, tally));
   // A few past FILMS_MAX, so the board stays full once the member's own films are taken out.
   return films.filter((f): f is NewFilm => f !== null).slice(0, FILMS_MAX + FILMS_BUFFER);
 }
@@ -344,7 +346,7 @@ async function sharedShows(region: string, days: string[], tally: Tally): Promis
     return out;
   };
   const ids = [...pick([streaming1, streaming2], STREAMING_SHOWS_MAX), ...pick([popular1, popular2], POPULAR_SHOWS_MAX)];
-  const found = await mapWithConcurrency(ids, 8, (id) => showFor(id, false, region, days, tally));
+  const found = await mapWithConcurrency(ids, LOOKUPS_IN_FLIGHT, (id) => showFor(id, false, region, days, tally));
   return found.filter((f): f is Airing => f !== null);
 }
 
@@ -368,38 +370,56 @@ class Tally {
 }
 
 const weekOf = (today: string) => Array.from({ length: 7 }, (_, i) => addDays(today, i));
+/**
+ * The days a build covers: yesterday to ten days out. Builds aren't keyed by
+ * day (so midnight never sends every country cold at once); a copy made
+ * yesterday, or in a zone a day ahead, still covers today's week, and each
+ * request filters it down to its own week (see merge).
+ */
+const buildSpan = (today: string) => Array.from({ length: 11 }, (_, i) => addDays(today, i - 1));
 
 type FeedPart = { films: NewFilm[]; shows: Airing[] };
 const EMPTY: FeedPart = { films: [], shows: [] };
 
 async function buildShared(region: string, today: string): Promise<FeedPart> {
   const tally = new Tally();
-  const [films, shows] = await Promise.all([sharedFilms(region, today, tally), sharedShows(region, weekOf(today), tally)]);
+  const [films, shows] = await Promise.all([sharedFilms(region, today, tally), sharedShows(region, buildSpan(today), tally)]);
   tally.check(`[new] shared ${region}`);
   return { films, shows };
 }
 
 async function buildMember(userId: string, region: string, today: string): Promise<FeedPart> {
   const tally = new Tally();
-  const days = weekOf(today);
+  const days = buildSpan(today);
   const [filmIds, showIds] = await Promise.all([watchlistMovieIds(userId), myShowIds(userId)]);
   const [films, shows] = await Promise.all([
-    mapWithConcurrency([...filmIds], 8, (id) => filmFor(id, region, today, true, tally)),
-    mapWithConcurrency(showIds, 8, (id) => showFor(id, true, region, days, tally)),
+    mapWithConcurrency([...filmIds], LOOKUPS_IN_FLIGHT, (id) => filmFor(id, region, today, true, tally)),
+    mapWithConcurrency(showIds, LOOKUPS_IN_FLIGHT, (id) => showFor(id, true, region, days, tally)),
   ]);
   tally.check('[new] member');
   return { films: films.filter((f): f is NewFilm => f !== null), shows: shows.filter((s): s is Airing => s !== null) };
 }
 
-/** Shared per country and day (6h). */
-const getShared = (region: string, today: string) => unstable_cache(() => buildShared(region, today), ['new-shared-v1', region, today], { revalidate: 21600 })();
+/**
+ * Shared per country. After 6h the copy is served once more while a fresh
+ * one builds in the background, so only the very first visit in a country
+ * ever waits for a build.
+ */
+const getShared = (region: string, today: string) => unstable_cache(() => buildShared(region, today), ['new-shared-v2', region], { revalidate: 21600 })();
 
 /** Per member (6h), expired by watchlist and show-alert writes (`invalidateNewFeed`). */
 const getMember = (userId: string, region: string, today: string) =>
-  unstable_cache(() => buildMember(userId, region, today), ['new-member-v1', userId, region, today], { revalidate: 21600, tags: [newFeedTag(userId)] })();
+  unstable_cache(() => buildMember(userId, region, today), ['new-member-v2', userId, region], { revalidate: 21600, tags: [newFeedTag(userId)] })();
 
 /** Your films first, then the country's (yours taken out); your shows merged into their channels. */
 function merge(region: string, today: string, shared: FeedPart, member: FeedPart): NewFeed {
+  // This request's week: episodes outside it drop, and shows with none left go.
+  const week = weekOf(today);
+  const inWeek = new Set(week);
+  const thisWeek = (as: Airing[]) =>
+    as.map((a) => ({ ...a, show: { ...a.show, episodes: a.show.episodes.filter((e) => inWeek.has(e.date)) } })).filter((a) => a.show.episodes.length > 0);
+  shared = { ...shared, shows: thisWeek(shared.shows) };
+  member = { ...member, shows: thisWeek(member.shows) };
   const pinnedIds = new Set(member.films.map((f) => f.tmdbId));
   const films = [
     ...[...member.films].sort((a, b) => a.date.localeCompare(b.date)),
@@ -423,7 +443,7 @@ function merge(region: string, today: string, shared: FeedPart, member: FeedPart
     .sort((a, b) => Number(b.mine) - Number(a.mine) || Number(!b.elsewhere) - Number(!a.elsewhere) || Number(b.streaming) - Number(a.streaming) || b.shows.length - a.shows.length)
     .slice(0, CHANNELS_MAX);
 
-  return { region, today, days: weekOf(today), films, channels: ordered, hasShows: member.shows.length > 0 };
+  return { region, today, days: week, films, channels: ordered, hasShows: member.shows.length > 0 };
 }
 
 /**
